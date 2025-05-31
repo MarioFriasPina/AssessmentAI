@@ -1,0 +1,14 @@
+# For training
+torch
+torchrl
+tensordict
+matplotlib
+tqdm
+ipython
+numpy
+ipykernel
+swig
+gymnasium[box2d]
+
+# For running the backend server
+litserve

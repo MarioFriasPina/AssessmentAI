@@ -1,9 +1,0 @@
-torch
-torchrl
-tensordict
-matplotlib
-tqdm
-ipython
-fastapi
-numpy
-cv2
