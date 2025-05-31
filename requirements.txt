@@ -1,0 +1,5 @@
+aiohttp
+opencv-python
+gymnasium
+av
+aiortc
