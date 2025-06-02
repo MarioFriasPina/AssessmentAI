@@ -1,6 +1,6 @@
 aiohttp
-opencv-python
-gymnasium
+gymnasium[box2d]
 av
 aiortc
 uvloop
+opencv-python

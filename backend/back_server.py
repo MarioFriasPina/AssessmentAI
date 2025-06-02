@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pc")
 
 # Set this to your AI server's internal/private IP
-model_url = "http://localhost:8000/predict"
+model_url = "http://127.24.0.9:8000/predict"
 
 pcs = set()
 latest_actions = {}
