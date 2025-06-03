@@ -16,9 +16,12 @@ access_log_format = (
     '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 )
 
-ssl_context = ('/etc/ssl/igdrasil/key.pem', '/etc/ssl/igdrasil/cert.crt')
+#ssl_context = ('/etc/ssl/igdrasil/key.pem', '/etc/ssl/igdrasil/cert.crt')
 
-daemon = True
+certfile='/etc/ssl/igdrasil/key.pem'
+keyfile='/etc/ssl/igdrasil/cert.crt'
+
+daemon = False
 
 # Add the frontend ip here
-forwarded_allow_ips = ['*']
+forwarded_allow_ips =  '*'
