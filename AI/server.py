@@ -32,4 +32,4 @@ if __name__ == "__main__":
         callbacks=None,         # Run custom actions at specific points in the server's lifecycle, such as before or after predictions.
 
     )
-    server.run(port=8000)
+    server.run(port=443)        # Run the server on port 443

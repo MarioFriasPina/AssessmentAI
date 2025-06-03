@@ -1,7 +1,7 @@
 """ Gunicorn configuration file for the backend server."""
 import multiprocessing
 
-bind = "127.0.0.1:443"
+bind = "0.0.0.0:443"
 workers = multiprocessing.cpu_count() * 2 + 1
 
 wsgi_app = "server:app"
@@ -18,10 +18,5 @@ access_log_format = (
 
 #ssl_context = ('/etc/ssl/igdrasil/key.pem', '/etc/ssl/igdrasil/cert.crt')
 
-certfile='/etc/ssl/igdrasil/key.pem'
-keyfile='/etc/ssl/igdrasil/cert.crt'
-
-daemon = False
-
-# Add the frontend ip here
-forwarded_allow_ips =  '*'
+keyfile='/etc/ssl/igdrasil/key.pem'
+certfile='/etc/ssl/igdrasil/cert.crt'

@@ -4,6 +4,8 @@ import asyncio
 import logging
 import json
 import aiohttp
+import re
+import aiohttp_cors
 import gymnasium as gym
 import uvloop
 
@@ -22,7 +24,7 @@ logger = logging.getLogger("pc")
 executor = ThreadPoolExecutor(max_workers=2)
 
 # URL for the AI server
-MODEL_URL = "http://localhost:8000/predict"
+MODEL_URL = "http://192.24.0.9:443/predict"
 
 pcs = set()
 latest_actions = {}
@@ -299,3 +301,29 @@ app = web.Application()
 app.on_shutdown.append(on_shutdown)
 app.router.add_post('/offer', offer)
 app.router.add_get('/ws', websocket_handler)
+
+# CORS setup
+def is_allowed_origin(origin):
+    # Example: allow all origins from 172.24.0.0/24
+    """Check if the given origin is allowed.
+
+    The origin is allowed if it matches the following regex:
+    ^https://172\.24\.0\.\d{1,3}(:\d+)?$
+    This allows all origins from 172.24.0.0/24.
+    """
+    return re.match(r"^https://172\.24\.0\.\d{1,3}(:\d+)?$", origin)
+
+cors = aiohttp_cors.setup(app, defaults={})
+
+for route in list(app.router.routes()):
+    cors.add(
+        route,
+        {
+            "*": aiohttp_cors.ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*",
+                allow_origin=is_allowed_origin  # This is a callable
+            )
+        }
+    )

@@ -33,7 +33,6 @@ htmlcov/
 .coverag
 
 # Cloud-init
-cloud-init*
 daemon.json
 
 # Checkpoints

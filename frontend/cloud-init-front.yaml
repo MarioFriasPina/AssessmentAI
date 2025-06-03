@@ -1,0 +1,82 @@
+#cloud-config
+
+hostname: ig-drasil-front
+fqdn: ig-drasil-front.local
+
+users:
+    - name: clouduser
+      gecos: Main User
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      groups: users, admin
+      shell: /bin/bash
+      lock_passwd: false
+      ssh_pwauth: true
+      ssh_authorized_keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC9Yj/fWkE13i9xt0rAkgaKGTvuDgGZ4uqqveuaDSafnKqvE0CuzajiEVie4LEwPsw1XfD9T6Fj06Oi8vqDJkKi0QZRcsJRrQXWJj1I0LqPSoATL2lxGBB4z0MSDdtd+hSxUZHHvJjHCLVBjoeZGOBzoYY4SEVDhgbgLMbp2vJoHGuhRLCNLfhrcHY6VGVf+Q85hci2jQroksH+bpOI+Dgtch0BPIcxM7Zr4XbSaCxkOXOwM+VMvY1Ey29wJwNUZrZyRdRcNIQp8WVbS/rtO/0pPqjf2KPHmofWA1kRvGNLgh1q2kDU2MwGefz+XEA6A+56J2BorHh6IFtOFAWJDQ3zKvUd22AxusrdFGf9eBXTi/u4M0O2ctxRBg1d01m0PBWJc2i+ELOt9YfQ7OgFW9o1YtQ/PdHhriFqEQaFtLc4m6qFKHf6J27WBSMLuhnAHUsidD1auDGHEprBk3zygrloLS00rmRsn3p0sNIfKGUsukcroz/geTwI4INeeWpZN6k= mfrias@LAPTOP-MARIO
+# Explicit password configuration
+chpasswd:
+    list: |
+        clouduser:ZGg8rQpu5bwJs7v
+    expire: false
+
+# Allow password-based SSH login
+ssh_pwauth: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+    - nginx
+    - openssl
+    - ufw
+    - curl
+    - openssh-server
+    - htop
+    - git
+
+write_files:
+    # Nginx configuration
+    - path: /etc/nginx/sites-available/default
+      content: |
+          server {
+              listen 80;
+              listen 443 ssl;
+
+              server_name ig-drasil-front;
+
+              ssl_certificate     /etc/ssl/igdrasil/cert.crt;
+              ssl_certificate_key /etc/ssl/igdrasil/key.pem;
+
+              location / {
+                  root /var/www/html;
+                  index index.html index.htm;
+              }
+          }
+
+runcmd:
+    # Enable and start ssh
+    - systemctl enable ssh
+    - systemctl restart ssh
+
+    # Generate self-signed SSL cert
+    - mkdir /etc/ssl/igdrasil
+    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/key.pem -out /etc/ssl/igdrasil/cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=ig-drasil-front.com"
+
+    # Allow traffic
+    - ufw allow 'OpenSSH'
+    - ufw allow 'Nginx Full'
+    - ufw --force enable
+
+    # Get the repository
+    - export GIT_TERMINAL_PROMPT=0
+    - su - clouduser -c "git clone https://github.com/MarioFriasPina/AssessmentAI.git /home/clouduser/ig-drasil-front"
+    - chown -R clouduser:users /home/clouduser/ig-drasil-front
+
+    # Copy the content of the repository's frontend folder to var/www/html, without the folder itself
+    - cp -r /home/clouduser/ig-drasil-front/frontend/* /var/www/html
+
+    # Enable and start nginx
+    - systemctl enable nginx
+    - systemctl restart nginx
+
+final_message: "Frontend server is up and running!"

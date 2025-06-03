@@ -4,7 +4,7 @@ async function negotiate() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const resp = await fetch(`http://${backendHost}/offer`, {
+    const resp = await fetch(`https://${backendHost}/offer`, {
         method: "POST",
         body: JSON.stringify({
             sdp: pc.localDescription.sdp,
@@ -57,7 +57,7 @@ async function negotiate() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const resp = await fetch("/offer", {
+    const resp = await fetch(`https://${backendHost}/offer`, {
         method: "POST",
         body: JSON.stringify({
             sdp: pc.localDescription.sdp,
@@ -74,7 +74,7 @@ negotiate();
 
 // Connect to WebSocket with session_id as query param
 const ws = new WebSocket(
-    "ws://" + backendHost + "/ws?session_id=" + session_id
+    "wss://" + backendHost + "/ws?session_id=" + session_id
 );
 
 function getAction(key) {
