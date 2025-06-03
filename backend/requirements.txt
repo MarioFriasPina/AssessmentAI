@@ -4,3 +4,6 @@ av
 aiortc
 uvloop
 opencv-python
+
+# gunicorn
+gunicorn

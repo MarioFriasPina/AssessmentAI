@@ -288,9 +288,14 @@ async def on_shutdown(_):
     await asyncio.gather(*coros)
     pcs.clear()
 
-if __name__ == '__main__':
-    app = web.Application()
-    app.on_shutdown.append(on_shutdown)
-    app.router.add_post('/offer', offer)
-    app.router.add_get('/ws', websocket_handler)
-    web.run_app(app, port=8080)
+# if __name__ == '__main__':
+#     app = web.Application()
+#     app.on_shutdown.append(on_shutdown)
+#     app.router.add_post('/offer', offer)
+#     app.router.add_get('/ws', websocket_handler)
+#     web.run_app(app, port=8080)
+
+app = web.Application()
+app.on_shutdown.append(on_shutdown)
+app.router.add_post('/offer', offer)
+app.router.add_get('/ws', websocket_handler)
