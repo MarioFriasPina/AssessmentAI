@@ -5,7 +5,7 @@ import logging
 import json
 import aiohttp
 import re
-import aiohttp_cors
+from aiohttp_middlewares import cors_middleware
 import gymnasium as gym
 import uvloop
 
@@ -297,33 +297,23 @@ async def on_shutdown(_):
 #     app.router.add_get('/ws', websocket_handler)
 #     web.run_app(app, port=8080)
 
-app = web.Application()
+subnet_regex = re.compile(
+    r"^https?://172\.24\.0\.(?:"
+    r"[0-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]"
+    r")(?:\:\d{1,5})?$"
+)
+
+app = web.Application(
+    middlewares=[
+        cors_middleware(
+            allow_all=False,
+            origins=[subnet_regex],
+            allow_headers=["*"],
+            expose_headers=["*"],
+            allow_credentials=True
+        )
+    ]
+)
 app.on_shutdown.append(on_shutdown)
-app.router.add_post('/offer', offer)
-app.router.add_get('/ws', websocket_handler)
-
-# CORS setup
-def is_allowed_origin(origin):
-    # Example: allow all origins from 172.24.0.0/24
-    """Check if the given origin is allowed.
-
-    The origin is allowed if it matches the following regex:
-    ^https://172\.24\.0\.\d{1,3}(:\d+)?$
-    This allows all origins from 172.24.0.0/24.
-    """
-    return re.match(r"^https://172\.24\.0\.\d{1,3}(:\d+)?$", origin)
-
-cors = aiohttp_cors.setup(app, defaults={})
-
-for route in list(app.router.routes()):
-    cors.add(
-        route,
-        {
-            "*": aiohttp_cors.ResourceOptions(
-                allow_credentials=True,
-                expose_headers="*",
-                allow_headers="*",
-                allow_origin=is_allowed_origin  # This is a callable
-            )
-        }
-    )
+resource_off = app.router.add_post('/offer', offer)
+resource_ws = app.router.add_get('/ws', websocket_handler)
