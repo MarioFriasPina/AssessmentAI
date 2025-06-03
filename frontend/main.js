@@ -1,4 +1,4 @@
-const backendHost = "localhost:8080";
+const backendHost = "172.24.0.237:443";
 
 async function negotiate() {
     const offer = await pc.createOffer();
