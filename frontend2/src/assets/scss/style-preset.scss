@@ -296,14 +296,21 @@ $value in $preset-colors {
   .pc-sidebar,
   .navbar,
   .card,
-  .modal-content,div {
+  .modal-content,div,.pc-footer,.loading-overlay  {
     background-color: #1e1e1e;
     color: #d6d2d2;
   }
+  .loading-overlay {
+    color: #7ec1ff !important;
+  }
 
-  a,h1,h2,h3,h4,h5,h6,p,td,
+  h1,h2,h3,h4,h5,h6,p,td,
   .text-primary {
     color: lighten($primary, 20%) !important;
+  }
+
+  a {
+    color: lighten($primary, 10%) !important;
   }
 
   .apexcharts-datalabels,
@@ -348,4 +355,18 @@ $value in $preset-colors {
   .bg-light {
     background-color: #1e1e1e !important;
   }
+}
+
+.loading-overlay{
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2em;
+  font-family: sans-serif;
 }

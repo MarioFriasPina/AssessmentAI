@@ -742,6 +742,7 @@ div.dataTables_wrapper div.dataTables_filter {
 
 div.table-responsive>div.dataTables_wrapper>div.row>div[class^=col-]:first-child {
   padding-left: calc(var(--bs-gutter-x) * 0.5);
+  max-width: 100px;
 }
 
 div.table-responsive>div.dataTables_wrapper>div.row>div[class^=col-]:last-child {

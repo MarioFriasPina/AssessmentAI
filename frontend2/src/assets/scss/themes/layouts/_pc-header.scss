@@ -307,6 +307,7 @@
       }
 
       &.table-responsive {
+        max-width: 100%;
         border-top: 1px solid $border-color;
         background: transparentize(shift-color($primary, $soft-bg-level), 0.8);
       }
