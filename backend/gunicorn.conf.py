@@ -18,3 +18,5 @@ access_log_format = (
 
 keyfile='/etc/ssl/igdrasil/key.pem'
 certfile='/etc/ssl/igdrasil/cert.crt'
+
+worker_class = "uvicorn.workers.UvicornWorker"
