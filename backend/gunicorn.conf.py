@@ -16,7 +16,5 @@ access_log_format = (
     '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 )
 
-#ssl_context = ('/etc/ssl/igdrasil/key.pem', '/etc/ssl/igdrasil/cert.crt')
-
 keyfile='/etc/ssl/igdrasil/key.pem'
 certfile='/etc/ssl/igdrasil/cert.crt'

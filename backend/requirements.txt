@@ -13,3 +13,4 @@ asyncpg
 # gunicorn server
 gunicorn
 uvicorn
+uvloop
