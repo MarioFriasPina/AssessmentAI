@@ -4,7 +4,7 @@ import multiprocessing
 bind = "0.0.0.0:443"
 workers = multiprocessing.cpu_count() * 2 + 1
 
-wsgi_app = "server:app"
+wsgi_app = "main:app"
 
 accesslog = "/var/log/gunicorn_access.log"
 

@@ -1,329 +1,381 @@
-""" This module defines the WebSocket handler for the backend server."""
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
-import logging
 import json
+import logging
+import uuid
+from typing import Any, Dict
+from concurrent.futures import ThreadPoolExecutor
+
 import aiohttp
-import re
-import aiohttp_cors
 import gymnasium as gym
-import uvloop
-
-from av import VideoFrame
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
-from aiohttp import web
+from av import VideoFrame
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 
-# Set the event loop policy to use uvloop, improves I/O performance
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-
-# Logging setup
+# Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("pc")
+logger = logging.getLogger("webrtc-server")
 
-# Global executor for running blocking calls in threads
-executor = ThreadPoolExecutor(max_workers=2)
+# FastAPI app
+app = FastAPI()
 
-# URL for the AI server
-MODEL_URL = "http://192.24.0.9:443/predict"
+# ThreadPool executor for offloading gym.step() and gym.render()
+executor = ThreadPoolExecutor()
 
-pcs = set()
-latest_actions = {}
+# Global state
+pcs = set()  # All active RTCPeerConnection objects
 
-async def websocket_handler(request):
-    """This is the main entry point for the WebSocket endpoint. It parses the action from the WebSocket message and
-    saves it in the latest_actions dictionary. It also removes the session from the latest_actions dictionary when the
-    WebSocket is closed."""
-    ws = web.WebSocketResponse()
-    await ws.prepare(request)
+# session_data maps session_id -> {
+#     "pc": RTCPeerConnection,
+#     "env_user": gym.Env,
+#     "env_rl": gym.Env,
+#     "user_track": UserVideoTrack,
+#     "rl_track": RLVideoTrack,
+#     "queue": asyncio.Queue,
+# }
+session_data: Dict[str, Dict[str, Any]] = {}
+session_data_lock = asyncio.Lock()
 
-    # Get the session_id from the query parameters
-    session_id = request.query.get("session_id")
-    if not session_id:
-        await ws.close()
-        return ws
+# Convenience: alias for the queue storage (mirrors session_data's "queue" field)
+# but we keep both in sync via session_data_lock.
+session_queues: Dict[str, asyncio.Queue] = {}
 
-    # Save the latest action for this session
-    latest_actions[session_id] = None
+# Model inference server URL
+MODEL_URL = "http://localhost:8001/inference"
 
-    async for msg in ws:
-        if msg.type == web.WSMsgType.TEXT:
-            # Try to parse the action as JSON
-            try:
-                data = json.loads(msg.data)
-                action = data.get("action")
-                latest_actions[session_id] = action
-            except json.JSONDecodeError:
-                pass
-        elif msg.type == web.WSMsgType.ERROR:
-            logger.error("WebSocket connection closed with exception %s", ws.exception())
 
-    # Elminate the session from latest_actions when WebSocket closes
-    if session_id in latest_actions:
-        del latest_actions[session_id]
-    return ws
+async def cleanup(session_id: str):
+    """
+    Tear down everything associated with a given session_id:
+      - Stop video tracks (which closes any associated aiohttp session)
+      - Close the RTCPeerConnection
+      - Remove from pcs set
+      - Close gym environments
+      - Remove session_data and session_queues entries
+    """
+    async with session_data_lock:
+        info = session_data.pop(session_id, None)
+        queue = session_queues.pop(session_id, None)
+
+    if not info:
+        return
+
+    pc: RTCPeerConnection = info["pc"]
+    env_user = info["env_user"]
+    env_rl = info["env_rl"]
+    user_track: "UserVideoTrack" = info["user_track"]
+    rl_track: "RLVideoTrack" = info["rl_track"]
+
+    # Stop the video tracks (this will also close aiohttp sessions in RLVideoTrack)
+    try:
+        await user_track.stop()
+    except Exception as e:
+        logger.warning(f"Error stopping UserVideoTrack for session {session_id}: {e}")
+    try:
+        await rl_track.stop()
+    except Exception as e:
+        logger.warning(f"Error stopping RLVideoTrack for session {session_id}: {e}")
+
+    # Close the PeerConnection
+    try:
+        await pc.close()
+    except Exception as e:
+        logger.warning(f"Error closing PeerConnection for session {session_id}: {e}")
+    pcs.discard(pc)
+
+    # Close gym environments
+    try:
+        env_user.close()
+    except Exception:
+        pass
+    try:
+        env_rl.close()
+    except Exception:
+        pass
+
+    logger.info(f"Cleaned up session {session_id}")
+
 
 class UserVideoTrack(VideoStreamTrack):
     """
-    A VideoStreamTrack that interacts with a gym environment.
+    Video track that steps the gym environment based on client-supplied actions.
+    If no action is pending, it samples a random action.
     """
-    def __init__(self, env, session_id):
-        """
-        Initialize the UserVideoTrack.
 
-        :param env: The gym environment to use for the video track.
-        :param session_id: The session id to use for the video track.
-        """
-        super().__init__()
+    def __init__(self, env: gym.Env, session_id: str):
+        super().__init__()  # initialize base class
         self.env = env
         self.session_id = session_id
 
-    async def recv(self):
-        """
-        Return the next frame from the environment.
-
-        This method is called by aiortc to get the next frame from the environment.
-
-        It first checks if the frame counter is 0, if so, it resets the environment using
-        env.reset() and stores the observation in self.last_obs.
-
-        Then it renders the environment using env.render() and asks for a new action every
-        self.skip frames using self.get_remote_action().
-
-        If an error occurs while asking for a new action, it samples a random action using
-        env.action_space.sample().
-
-        Finally, it executes env.step(action) in a thread and increments the frame counter.
-
-        :return: A VideoFrame object containing the rendered frame, the pts and
-        time_base are set to the current timestamp and the time base of the stream track.
-        """
+    async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
 
-        # Obtain the most recent valid action
-        action = latest_actions.get(self.session_id)
+        # Pull the most recent action from the queue (drain older ones)
+        async with session_data_lock:
+            queue = session_queues.get(self.session_id)
+        action = None
+        if queue is not None:
+            try:
+                while True:
+                    action = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+
+        # If no action came from client, choose a random action
         if action is None:
-            # If there is no valid action, sample a random action
             action = self.env.action_space.sample()
 
-        # Execute env.step(action) in a thread
-        await asyncio.get_event_loop().run_in_executor(executor, self.env.step, action)
+        # Step the environment off the event loop
+        result = await asyncio.get_event_loop().run_in_executor(
+            executor, self.env.step, action
+        )
+        obs, reward, done, info = result
+        if done:
+            # If episode ended, reset before rendering the next frame
+            obs = await asyncio.get_event_loop().run_in_executor(
+                executor, self.env.reset
+            )
 
-        # Execute env.render() in a thread
-        frame = await asyncio.get_event_loop().run_in_executor(executor, self.env.render)
+        # Render a frame off the event loop
+        frame = await asyncio.get_event_loop().run_in_executor(
+            executor, self.env.render
+        )
 
-        # Convert frame to VideoFrame
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts = pts
         video_frame.time_base = time_base
         return video_frame
 
+
 class RLVideoTrack(VideoStreamTrack):
     """
-    A VideoStreamTrack that interacts with a reinforcement learning environment
-    using an AI server.
+    Video track that queries a remote model for actions every `skip` frames,
+    otherwise repeats the last action.
     """
-    def __init__(self, env, model_url, skip=2):
-        """
-        Initialize the RLVideoTrack.
 
-        :param env: The gym environment to use for the RL model.
-        :param model_url: The URL of the AI server.
-        :param skip: The number of frames to skip action request.
-        """
+    def __init__(self, env: gym.Env, model_url: str, skip: int = 2):
         super().__init__()
         self.env = env
         self.model_url = model_url
-
-        # Last observation
-        self.last_obs = None
-        # Save the last action received from the model, to not have to ask every frame
-        self.last_action = None
-        # Counter for frames, used to skip frames
-        self.frame_counter = 0
-        # Number of frames to skip action request
         self.skip = skip
+        self.frame_counter = 0
+        self.last_action = None
 
-        # Create aiohttp ClientSession, with limit=0 to allow keep-alive
         connector = aiohttp.TCPConnector(limit=0, keepalive_timeout=75)
         self.session = aiohttp.ClientSession(connector=connector)
 
-    async def get_remote_action(self, frame):
-        """
-        Asks the AI server for the next action given the current frame.
+    async def get_remote_action(self, frame) -> Any:
+        # Convert frame (H x W x C) to NHWC->NCHW float32 bytes
+        import numpy as np
 
-        The frame is normalized to [0,1], reshaped to [C, H, W] and serialized to bytes.
-        The shape of the tensor is sent in the X-SHAPE header.
-
-        The action is returned as a JSON response from the server.
-        """
-        # Normalize frame
-        tensor = frame.astype('float32') / 255.0
-        # Change shape to [C, H, W]
-        tensor = tensor.transpose(2, 0, 1)
-        # Add batch dimension
-        tensor = tensor[None, ...]
-
-        # Serialize tensor to bytes
+        tensor = frame.astype("float32") / 255.0
+        tensor = tensor.transpose(2, 0, 1)[None, ...]  # shape: (1, C, H, W)
         payload = tensor.tobytes()
         shape_info = json.dumps(tensor.shape)
 
-        # Send the request to the inference server
         async with self.session.post(
             self.model_url,
             data=payload,
             headers={
-                'Content-Type': 'application/octet-stream',
-                'X-SHAPE': shape_info
-            }
+                "Content-Type": "application/octet-stream",
+                "X-SHAPE": shape_info,
+            },
         ) as resp:
             result = await resp.json()
-            # Return the action from the response
-            return result['action']
+            return result.get("action")
 
-    async def recv(self):
-        """
-        Return the next frame from the environment.
-
-        This method is called by aiortc to get the next frame from the environment.
-
-        It first checks if the frame counter is 0, if so, it resets the environment using
-        env.reset() and stores the observation in self.last_obs.
-
-        Then it renders the environment using env.render() and asks for a new action every
-        self.skip frames using self.get_remote_action().
-
-        If an error occurs while asking for a new action, it samples a random action using
-        env.action_space.sample().
-
-        Finally, it executes env.step(action) in a thread and increments the frame counter.
-
-        :return: A VideoFrame object containing the rendered frame, the pts and
-        time_base are set to the current timestamp and the time base of the stream track.
-        """
-
+    async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
 
-        # If first frame, reset the environment
-        if self.last_obs is None:
-            obs, _ = await asyncio.get_event_loop().run_in_executor(executor, self.env.reset)
-            self.last_obs = obs
+        # If first frame, reset environment
+        if self.frame_counter == 0:
+            obs = await asyncio.get_event_loop().run_in_executor(
+                executor, self.env.reset
+            )
 
-        # Execute env.render() in a thread
-        frame = await asyncio.get_event_loop().run_in_executor(executor, self.env.render)
+        # Render current frame before stepping
+        frame = await asyncio.get_event_loop().run_in_executor(
+            executor, self.env.render
+        )
 
-        # Only ask for a new action every `self.skip` frames
+        # Decide whether to query the remote model
         if self.frame_counter % self.skip == 0:
             try:
                 action = await self.get_remote_action(frame)
             except Exception as e:
-                logger.error("Error on get_remote_action: %s", e)
-                # In case of error, sample a random action
+                logger.error(f"AI inference failed (falling back to random): {e}")
                 action = self.env.action_space.sample()
             self.last_action = action
         else:
-            # Retrieve the last action
             action = self.last_action
 
-        # Execute env.step(action) in a thread
-        await asyncio.get_event_loop().run_in_executor(executor, self.env.step, action)
+        # Step the environment
+        result = await asyncio.get_event_loop().run_in_executor(
+            executor, self.env.step, action
+        )
+        obs, reward, done, info = result
+        if done:
+            obs = await asyncio.get_event_loop().run_in_executor(
+                executor, self.env.reset
+            )
 
-        # Increment frame counter
         self.frame_counter += 1
 
-        # Convert frame to VideoFrame
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts = pts
         video_frame.time_base = time_base
         return video_frame
 
-async def offer(request):
-    """
-    Handles the offer from the client, creates a PeerConnection, 2 environments
-    (one for the user and one for the RL model), and 2 video tracks (one for the
-    user and one for the RL model).
+    async def stop(self):
+        # Close the aiohttp session when stopping the track
+        try:
+            await super().stop()
+        except Exception:
+            pass
+        try:
+            await self.session.close()
+        except Exception:
+            pass
 
-    :param request: The request containing the offer
-    :return: The answer SDP
+
+@app.post("/offer")
+async def offer(request: Request):
+    """
+    HTTP endpoint to receive a WebRTC SDP offer, create a new session with:
+      - a server-generated UUID as session_id
+      - two gym environments (user-controlled + RL-controlled)
+      - two VideoStreamTracks
+      - an RTCPeerConnection that streams both tracks
+    Returns the SDP answer and the session_id.
     """
     params = await request.json()
-    session_id = params.get("session_id")
-    if not session_id:
-        return web.json_response({"error": "Missing session_id"}, status=400)
+    offer_sdp = params.get("sdp")
+    offer_type = params.get("type")
+    if not offer_sdp or not offer_type:
+        return JSONResponse(content={"error": "Missing sdp or type"}, status_code=400)
 
-    _offer = RTCSessionDescription(sdp=params['sdp'], type=params['type'])
+    # Generate a unique session_id (UUID4)
+    session_id = str(uuid.uuid4())
+    logger.info(f"Creating new session: {session_id}")
+
+    # Prepare PeerConnection
     pc = RTCPeerConnection()
     pcs.add(pc)
-    logger.info("Created PeerConnection %s", pc)
+    logger.info(f"Created PeerConnection {pc} for session {session_id}")
 
+    # Handle cleanup when the connection state changes
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        if pc.iceConnectionState in ("failed", "disconnected", "closed"):
+            logger.info(f"Connection state {pc.iceConnectionState} for session {session_id}; cleaning up")
+            await cleanup(session_id)
+
+    # Set remote description (the client's offer)
+    _offer = RTCSessionDescription(sdp=offer_sdp, type=offer_type)
     await pc.setRemoteDescription(_offer)
 
-    # Create 2 environments: one for the user and one for the RL model
+    # Create Gym environments
     env_user = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=False)
     env_user.reset()
     env_rl = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=False)
     env_rl.reset()
 
-    # Create the video track for the user
-    video_track_user = UserVideoTrack(env_user, session_id)
-    pc.addTrack(video_track_user)
+    # Create a per-session queue for user actions
+    action_queue: asyncio.Queue = asyncio.Queue()
 
-    # Create the video track for the RL model
-    video_track_rl = RLVideoTrack(env_rl, MODEL_URL, skip=2)
-    pc.addTrack(video_track_rl)
+    # Store everything under session_data
+    async with session_data_lock:
+        session_data[session_id] = {
+            "pc": pc,
+            "env_user": env_user,
+            "env_rl": env_rl,
+            "user_track": None,  # placeholder, will set below
+            "rl_track": None,    # placeholder, will set below
+            "queue": action_queue,
+        }
+        session_queues[session_id] = action_queue
 
+    # Instantiate VideoStreamTrack objects
+    user_track = UserVideoTrack(env=env_user, session_id=session_id)
+    rl_track = RLVideoTrack(env=env_rl, model_url=MODEL_URL)
+
+    # Save track references into session_data
+    async with session_data_lock:
+        session_data[session_id]["user_track"] = user_track
+        session_data[session_id]["rl_track"] = rl_track
+
+    # Add tracks to the PeerConnection
+    pc.addTrack(user_track)
+    pc.addTrack(rl_track)
+
+    # Create the SDP answer
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
 
-    return web.json_response({
-        'sdp': pc.localDescription.sdp,
-        'type': pc.localDescription.type
-    })
+    # Return SDP + session_id to the client
+    return {
+        "sdp": pc.localDescription.sdp,
+        "type": pc.localDescription.type,
+        "session_id": session_id,
+    }
 
-async def on_shutdown(_):
+
+@app.websocket("/ws")
+async def websocket_handler(websocket: WebSocket):
     """
-    Shut down all peer connections and clear the set of all connections.
-
-    This function is meant to be passed to the `on_shutdown` event of an
-    aiohttp web application.
+    WebSocket endpoint for receiving user control actions.
+    The client must connect with ?session_id=<UUID> matching one returned from /offer.
     """
-    coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
-    pcs.clear()
+    await websocket.accept()
+    session_id = websocket.query_params.get("session_id")
+    if not session_id:
+        await websocket.close(code=4001)
+        return
 
-# if __name__ == '__main__':
-#     app = web.Application()
-#     app.on_shutdown.append(on_shutdown)
-#     app.router.add_post('/offer', offer)
-#     app.router.add_get('/ws', websocket_handler)
-#     web.run_app(app, port=8080)
+    # Verify that the session_id is known
+    async with session_data_lock:
+        if session_id not in session_queues:
+            await websocket.close(code=4002)
+            return
+        queue = session_queues[session_id]
 
-app = web.Application()
-app.on_shutdown.append(on_shutdown)
-app.router.add_post('/offer', offer)
-app.router.add_get('/ws', websocket_handler)
+    logger.info(f"WebSocket connected for session {session_id}")
 
-# CORS setup
-def is_allowed_origin(origin):
-    # Example: allow all origins from 172.24.0.0/24
-    """Check if the given origin is allowed.
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+                action = payload.get("action")
+                if action is not None:
+                    # Enqueue the action for the UserVideoTrack to pick up
+                    await queue.put(action)
+            except json.JSONDecodeError:
+                continue
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for session {session_id}")
+    finally:
+        # Trigger cleanup (idempotent if peers already closed)
+        await cleanup(session_id)
 
-    The origin is allowed if it matches the following regex:
-    ^https://172\.24\.0\.\d{1,3}(:\d+)?$
-    This allows all origins from 172.24.0.0/24.
+
+# Optionally, an endpoint to shut down all peer connections (for graceful server shutdown)
+@app.post("/shutdown_all")
+async def shutdown_all():
     """
-    return re.match(r"^https://172\.24\.0\.\d{1,3}(:\d+)?$", origin)
+    Force-close all active peer connections and clean up all sessions.
+    """
+    # Make a copy of session IDs to avoid modifying dict while iterating
+    async with session_data_lock:
+        sessions = list(session_data.keys())
 
-cors = aiohttp_cors.setup(app, defaults={})
+    for sid in sessions:
+        await cleanup(sid)
 
-for route in list(app.router.routes()):
-    cors.add(
-        route,
-        {
-            "*": aiohttp_cors.ResourceOptions(
-                allow_credentials=True,
-                expose_headers="*",
-                allow_headers="*",
-                allow_origin=is_allowed_origin  # This is a callable
-            )
-        }
-    )
+    return {"status": "all sessions cleaned up"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

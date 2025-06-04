@@ -1,10 +1,15 @@
-aiohttp
-aiohttp-cors
+
 gymnasium[box2d]
-av
-aiortc
-uvloop
 opencv-python
+fastapi
+aiortc
+aiohttp
+av
+bcrypt
+pyjwt
+sqlalchemy[asyncio] 
+asyncpg
 
 # gunicorn server
 gunicorn
+uvicorn
