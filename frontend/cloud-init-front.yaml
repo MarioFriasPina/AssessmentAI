@@ -61,14 +61,42 @@ write_files:
           }
 
 runcmd:
+    # Get my IP to add to env
+    - MYIP="$(hostname -I | awk '{print $1}')"
+    - BACKEND_IP="172.24.0.83"
+
     # Enable and start ssh
     - systemctl enable ssh
     - systemctl restart ssh
 
+    # Generate an SSH keypair on the frontend
+    - |
+        if [ ! -f /home/clouduser/.ssh/id_rsa ]; then
+            mkdir -p /home/clouduser/.ssh
+            chmod 700 /home/clouduser/.ssh
+            ssh-keygen -t rsa -b 4096 -f /home/clouduser/.ssh/id_rsa -N "" \
+                -C "frontend-to-backend"
+            chown -R clouduser:clouduser /home/clouduser/.ssh
+        fi
+
+    # Push pubkey to the backend’s authorized_keys using ssh-copy-id.
+    - |
+        ONE_TIME_PASS="ZGg8rQpu5bwJs7v"
+        if command -v sshpass >/dev/null 2>&1; then
+            sshpass -p "${ONE_TIME_PASS}" ssh-copy-id -o StrictHostKeyChecking=no \
+                -i /home/clouduser/.ssh/id_rsa.pub \
+                clouduser@${BACKEND_IP}
+        else
+            PUBKEY=$(cat /home/clouduser/.ssh/id_rsa.pub)
+            sshpass -p "${ONE_TIME_PASS}" ssh -o StrictHostKeyChecking=no \
+                clouduser@${BACKEND_IP} \
+                "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '${PUBKEY}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+        fi
+
     # Add backend server cert to frontend server and update CA certificates
     - mkdir /etc/ssl/igdrasil
-    - scp clouduser@172.24.0.220:/etc/ssl/igdrasil/cert.crt /etc/ssl/igdrasil/cert.crt
-    - scp clouduser@172.24.0.220:/etc/ssl/igdrasil/key.pem /etc/ssl/igdrasil/key.pem
+    - scp clouduser@$BACKEND_IP:/etc/ssl/igdrasil/cert.crt /etc/ssl/igdrasil/cert.crt
+    - scp clouduser@$BACKEND_IP:/etc/ssl/igdrasil/key.pem /etc/ssl/igdrasil/key.pem
     - cp /etc/ssl/igdrasil/cert.crt /usr/local/share/ca-certificates/igdrasil.crt
     - update-ca-certificates
 
