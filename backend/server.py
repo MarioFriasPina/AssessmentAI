@@ -5,7 +5,7 @@ import logging
 import json
 import aiohttp
 import re
-from aiohttp_middlewares import cors_middleware
+import aiohttp_cors
 import gymnasium as gym
 import uvloop
 
@@ -297,23 +297,19 @@ async def on_shutdown(_):
 #     app.router.add_get('/ws', websocket_handler)
 #     web.run_app(app, port=8080)
 
-subnet_regex = re.compile(
-    r"^https?://172\.24\.0\.(?:"
-    r"[0-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]"
-    r")(?:\:\d{1,5})?$"
-)
-
-app = web.Application(
-    middlewares=[
-        cors_middleware(
-            allow_all=False,
-            origins=[subnet_regex],
-            allow_headers=["*"],
-            expose_headers=["*"],
-            allow_credentials=True
-        )
-    ]
-)
+app = web.Application()
 app.on_shutdown.append(on_shutdown)
-resource_off = app.router.add_post('/offer', offer)
-resource_ws = app.router.add_get('/ws', websocket_handler)
+app.router.add_post('/offer', offer)
+app.router.add_get('/ws', websocket_handler)
+app.router.add_get('/', lambda request: web.Response(text="Welcome to the WebRTC server!"))
+
+cors = aiohttp_cors.setup(app, defaults={
+        "*": aiohttp_cors.ResourceOptions(
+            allow_credentials=True,
+            expose_headers="*",
+            allow_headers="*"
+        )
+    })
+
+for route in list(app.router.routes()):
+    cors.add(route)

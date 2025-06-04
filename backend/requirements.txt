@@ -1,5 +1,5 @@
 aiohttp
-aiohttp_middlewares
+aiohttp_cors
 gymnasium[box2d]
 av
 aiortc
