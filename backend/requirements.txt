@@ -5,6 +5,10 @@ fastapi
 aiortc
 aiohttp
 av
+bcrypt
+pyjwt
+sqlalchemy[asyncio] 
+asyncpg
 
 # gunicorn server
 gunicorn
