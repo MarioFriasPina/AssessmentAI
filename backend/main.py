@@ -28,6 +28,7 @@ from pydantic import BaseModel
 import bcrypt
 import jwt
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+import uvloop
 
 
 # region Conf
@@ -43,7 +44,7 @@ engine = sessionmaker(
 )
 
 # Create a configured "Session" class
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+#SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Create a base class for declarative models
 Base = declarative_base()
@@ -151,12 +152,13 @@ class UserData(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load the ML model
+    # Initialize the database on startup
+    await init_db()
+    yield
+    # On shutdown, close all PeerConnections
     logger.info("Shutting down PeerConnections")
     await asyncio.gather(*[pc.close() for pc in pcs])
-    await init_db()
     pcs.clear()
-    yield
 
 app = FastAPI(lifespan=lifespan)
 
@@ -165,7 +167,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pc")
 
 # Use uvloop for performance
-asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # CORS
 app.add_middleware(
@@ -493,9 +495,9 @@ async def offer(request: Request):
     await pc.setRemoteDescription(_offer)
 
     # Create Gym environments
-    env_user = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=False)
+    env_user = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
     env_user.reset()
-    env_rl = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=False)
+    env_rl = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
     env_rl.reset()
 
     # Create a per-session queue for user actions
@@ -591,5 +593,13 @@ async def shutdown_all():
         await cleanup(sid)
 
     return {"status": "all sessions cleaned up"}
+
+# Add default path for health check
+@app.get("/")
+async def root():
+    """
+    Default path for health check.
+    """
+    return {"status": "ok"}
 
 # end region

@@ -161,31 +161,64 @@ function openActionWebSocket() {
 // --------------
 // 5. Key handlers: send { action: … } or { action: 0 } over the WS
 // --------------
-function getAction(key) {
-    // Map arrow keys to discrete integers, matching your backend’s expectation:
-    if (key === "ArrowUp") return 3;
-    if (key === "ArrowDown") return 4;
-    if (key === "ArrowLeft") return 1;
-    if (key === "ArrowRight") return 2;
-    return 0;
-}
+// 'a' is  action vector:
+//   a[0] = left/right   (−1.0 for left, +1.0 for right, 0 otherwise)
+//   a[1] = throttle     (+1.0 when up is held, 0 otherwise)
+//   a[2] = brake        (+0.8 when down is held, 0 otherwise)
+let a = [0.0, 0.0, 0.0];
 
-function onKeyDownSendAction(e) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const act = getAction(e.key);
-    if (act !== 0) {
-        ws.send(JSON.stringify({ action: act }));
-    }
-}
+// Prevent arrow keys from scrolling the page
+window.addEventListener(
+    "keydown",
+    function (e) {
+        const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+        if (arrowKeys.includes(e.key)) {
+            e.preventDefault();
+        }
+    },
+    { passive: false }
+);
 
-function onKeyUpSendAction(e) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    // When key is released, we send a “no‐op” (0)
-    const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
-    if (arrowKeys.includes(e.key)) {
-        ws.send(JSON.stringify({ action: 0 }));
+// --- KEYDOWN Handler ---
+window.addEventListener("keydown", function (e) {
+    switch (e.key) {
+        case "ArrowLeft":
+            a[0] = -1.0;
+            break;
+        case "ArrowRight":
+            a[0] = +1.0;
+            break;
+        case "ArrowUp":
+            a[1] = +1.0;
+            break;
+        case "ArrowDown":
+            // Using 0.8 so that wheels “block” rotation instead of full stop
+            a[2] = +0.8;
+            break;
+        default:
+            // do nothing for other keys
+            break;
     }
-}
+});
+
+// --- KEYUP Handler ---
+window.addEventListener("keyup", function (e) {
+    switch (e.key) {
+        case "ArrowLeft":
+        case "ArrowRight":
+            a[0] = 0.0;
+            break;
+        case "ArrowUp":
+            a[1] = 0.0;
+            break;
+        case "ArrowDown":
+            a[2] = 0.0;
+            break;
+        default:
+            // nothing to do
+            break;
+    }
+});
 
 // --------------
 // 6. Kick off negotiation as soon as the page loads
