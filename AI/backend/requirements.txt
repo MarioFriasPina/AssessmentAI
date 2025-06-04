@@ -13,3 +13,5 @@ asyncpg
 # gunicorn server
 gunicorn
 uvicorn
+aiosqlite
+python-multipart

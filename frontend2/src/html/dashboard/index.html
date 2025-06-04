@@ -22,17 +22,15 @@
           <div class="card">
             <div class="card-body">
               <h6 class="mb-2 f-w-400 text-muted">Best time</h6>
-              <h4 class="mb-3">12 minutes</h4>
-              <p class="mb-0 text-muted text-sm">you improved 33% over the previous record
-              </p>
+              <h4 id="bestTime" class="mb-3"></h4>
             </div>
           </div>
         </div>
         <div class="col-md-6 col-xl-3">
           <div class="card">
             <div class="card-body">
-              <h6 class="mb-2 f-w-400 text-muted">average time per game</h6>
-              <h4 class="mb-3">5 minutes </h4>
+              <h6 class="mb-2 f-w-400 text-muted">Average time per game</h6>
+              <h4 id="avgTime" class="mb-3"></h4>
             </div>
           </div>
         </div>
@@ -40,7 +38,7 @@
           <div class="card">
             <div class="card-body">
               <h6 class="mb-2 f-w-400 text-muted">Games won</h6>
-              <h4 class="mb-3">17 wins
+              <h4 id="wins" class="mb-3"></h4>
             </div>
           </div>
         </div>
@@ -48,7 +46,7 @@
           <div class="card">
             <div class="card-body">
               <h6 class="mb-2 f-w-400 text-muted">Lost games</h6>
-              <h4 class="mb-3">4 losses </h4>
+              <h4 id="losses" class="mb-3"></h4>
             </div>
           </div>
         </div>
@@ -68,67 +66,8 @@
                       
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Camera Lens</td>
-                      <td>40</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Laptop</td>
-                      <td>300</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Mobile</td>
-                      <td>355</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Camera Lens</td>
-                      <td>40</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Laptop</td>
-                      <td>300</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Mobile</td>
-                      <td>355</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Camera Lens</td>
-                      <td>40</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Laptop</td>
-                      <td>300</td>
-                     
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Mobile</td>
-                      <td>355</td>
-                      
-                    </tr>
-                    <tr>
-                      <td><a href="#" class="text-muted">84564564</a></td>
-                      <td>Mobile</td>
-                      <td>355</td>
-                      
-                    </tr>
+                  <tbody  id="scoreTableBody">
+
                   </tbody>
                 </table>
               </div>
@@ -150,6 +89,7 @@
   <!-- [Page Specific JS] start -->
   <script src="../assets/js/plugins/apexcharts.min.js"></script>
   <script src="../assets/js/pages/dashboard-default.js"></script>
+  <script src="../assets/js/pages/ScoreBoard.js"></script>
   <!-- [Page Specific JS] end -->
   @@include('../layouts/footer-js.html')
 </body>
