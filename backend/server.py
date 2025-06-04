@@ -5,7 +5,7 @@ import logging
 import json
 import aiohttp
 import re
-import aiohttp_cors
+from aiohttp_middlewares import cors_middleware
 import gymnasium as gym
 import uvloop
 
@@ -297,19 +297,25 @@ async def on_shutdown(_):
 #     app.router.add_get('/ws', websocket_handler)
 #     web.run_app(app, port=8080)
 
-app = web.Application()
+allowed_origins = [
+    f"https://172.24.0.{i}" for i in range(1, 255)
+] + [
+    f"https://172.24.0.{i}:443" for i in range(1, 255)
+]
+
+app = web.Application(
+    middlewares=[
+        cors_middleware(
+            allow_all=False,
+            origins=allowed_origins,
+            allow_headers=["*"],
+            expose_headers=["*"],
+            allow_credentials=True
+        )
+    ]
+)
+
 app.on_shutdown.append(on_shutdown)
 app.router.add_post('/offer', offer)
 app.router.add_get('/ws', websocket_handler)
-app.router.add_get('/', lambda request: web.Response(text="Welcome to the WebRTC server!"))
-
-cors = aiohttp_cors.setup(app, defaults={
-        "*": aiohttp_cors.ResourceOptions(
-            allow_credentials=True,
-            expose_headers="*",
-            allow_headers="*"
-        )
-    })
-
-for route in list(app.router.routes()):
-    cors.add(route)
+app.router.add_get('/', lambda request: web.Response(text="WebRTC server is running."))
