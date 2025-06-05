@@ -9,6 +9,7 @@ numpy
 ipykernel
 swig
 gymnasium[box2d]
+stable_baselines3
 
 # For running the backend server
 litserve
