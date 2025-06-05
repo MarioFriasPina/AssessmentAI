@@ -2,8 +2,8 @@
 // 1. Configuration
 // --------------
 const backendHost = "172.24.0.243:80"; // your backend address (with port)
-const REST_URL = `http://${backendHost}/offer`;
-const WS_ORIGIN = `ws://${backendHost}/ws`;
+const REST_URL = `https://${backendHost}/offer`;
+const WS_ORIGIN = `wss://${backendHost}/ws`;
 
 // References to two <video> tags and loaders in index.html:
 const video_user = document.getElementById("video_user");
