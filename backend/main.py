@@ -197,6 +197,19 @@ async def init_db():
 
 @app.post('/token')
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)) -> dict[str, str | int]:
+    '''
+    login login and get a token using the standard OAuth2PasswordBearer
+
+    Args:
+        form_data (OAuth2PasswordRequestForm, optional): The client details. Requires username and password. Defaults to Depends().
+        db (AsyncSession, optional): The Db instance (auto). Defaults to Depends(get_db).
+
+    Raises:
+        HTTPException: 403 if credentials are invalid
+
+    Returns:
+        dict[str, str | int]: The json standard bearer type token
+    '''
     query = Select(User).where(User.email == form_data.username)
     result = await db.execute(query)
 
@@ -225,6 +238,16 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
 @app.post('/create')
 async def create_user(data: NewUser, db: AsyncSession = Depends(get_db)) -> str:
+    '''
+    create_user Create and register a new user. Use email for authentication (not username)
+
+    Args:
+        data (NewUser): The new user data.
+        db (AsyncSession, optional): The Db session. Defaults to Depends(get_db).
+
+    Returns:
+        str: A success message.
+    '''
     newUser = User(
         name=data.name,
         name_last=data.name_last,
@@ -240,6 +263,19 @@ async def create_user(data: NewUser, db: AsyncSession = Depends(get_db)) -> str:
 
 @app.get('/data')
 async def get_data(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    '''
+    get_data Get a user's data to display in the front-end
+
+    Args:
+        db (AsyncSession, optional): The Db session. Defaults to Depends(get_db).
+        current_user (dict, optional): The required Bearer token. Defaults to Depends(get_current_user).
+
+    Raises:
+        HTTPException: 403 Unauthorized user
+
+    Returns:
+        UserData: The stats for the given user.
+    '''
     query = Select(User).where(User.email == current_user['email'])
     result = await db.execute(query)
 
@@ -260,6 +296,19 @@ async def get_data(db: AsyncSession = Depends(get_db), current_user: dict = Depe
 
 @app.get('/leaderboard')
 async def get_leaderboard(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)) -> list[LeaderboardEntry]:
+    '''
+    get_leaderboard Return the leaderboard for the top 20.
+
+    Args:
+        db (AsyncSession, optional): The db session (Fastapi). Defaults to Depends(get_db).
+        current_user (dict, optional): The user token. Defaults to Depends(get_current_user).
+
+    Raises:
+        HTTPException: 403 Unauthorized
+
+    Returns:
+        list[LeaderboardEntry]: A list of the leaderboard entries in order.
+    '''
     query = Select(User).order_by(User.record.desc()).limit(20)
     result = await db.execute(query)
 
