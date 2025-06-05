@@ -32,7 +32,7 @@ import uvloop
 
 # region Conf
 
-DATABASE_URL = "sqlite+aiosqlite:///./test.db"  # Change this to your database URL
+DATABASE_URL = "postgresql+asyncpg://clouduser:Mnb%40sdpoi87@172.24.0.22:5432/igdrasil"  
 
 # Create the SQLAlchemy engine
 engine_base = create_async_engine(DATABASE_URL, echo=True)
@@ -121,7 +121,7 @@ class User(Base):
 
     record = Column(Integer, default=0)
 
-    last_game = Column(DateTime, default=datetime.now(timezone.utc))
+    last_game = Column(DateTime(timezone=True),default=lambda: datetime.now(timezone.utc),nullable=False)
 
 # end region
 
@@ -161,11 +161,6 @@ class LeaderboardEntry(BaseModel):
 async def lifespan(app: FastAPI):
     # Initialize the database on startup
     await init_db()
-    yield
-    # On shutdown, close all PeerConnections
-    logger.info("Shutting down PeerConnections")
-    await asyncio.gather(*[pc.close() for pc in pcs])
-    pcs.clear()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -339,8 +334,6 @@ async def cleanup(session_id: str):
     """
     Tear down everything associated with a given session_id:
       - Stop video tracks (which closes any associated aiohttp session)
-      - Close the RTCPeerConnection
-      - Remove from pcs set
       - Close gym environments
       - Remove session_data and session_queues entries
     """
