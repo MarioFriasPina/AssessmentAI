@@ -12,6 +12,7 @@ users:
       lock_passwd: false
       ssh_pwauth: true
       ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJDFw8JXs6SYG59y+G6D9O7GtzrvS0StnUqDUYlh2wrI Sec. Tec. DGDH@DESKTOP-UPQCCKE
           - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC9Yj/fWkE13i9xt0rAkgaKGTvuDgGZ4uqqveuaDSafnKqvE0CuzajiEVie4LEwPsw1XfD9T6Fj06Oi8vqDJkKi0QZRcsJRrQXWJj1I0LqPSoATL2lxGBB4z0MSDdtd+hSxUZHHvJjHCLVBjoeZGOBzoYY4SEVDhgbgLMbp2vJoHGuhRLCNLfhrcHY6VGVf+Q85hci2jQroksH+bpOI+Dgtch0BPIcxM7Zr4XbSaCxkOXOwM+VMvY1Ey29wJwNUZrZyRdRcNIQp8WVbS/rtO/0pPqjf2KPHmofWA1kRvGNLgh1q2kDU2MwGefz+XEA6A+56J2BorHh6IFtOFAWJDQ3zKvUd22AxusrdFGf9eBXTi/u4M0O2ctxRBg1d01m0PBWJc2i+ELOt9YfQ7OgFW9o1YtQ/PdHhriFqEQaFtLc4m6qFKHf6J27WBSMLuhnAHUsidD1auDGHEprBk3zygrloLS00rmRsn3p0sNIfKGUsukcroz/geTwI4INeeWpZN6k= mfrias@LAPTOP-MARIO
 # Explicit password configuration
 chpasswd:
@@ -35,6 +36,7 @@ packages:
     - git
     - nodejs
     - npm
+    - gulp
 
 write_files:
     # Nginx configuration
@@ -118,7 +120,7 @@ runcmd:
     - chown -R clouduser:users /home/clouduser/ig-drasil-front
 
     # Copy the content of the repository's frontend folder to var/www/html, without the folder itself
-    - cp -r /home/clouduser/ig-drasil-front/frontend/* /var/www/html
+    - cp -r /home/clouduser/ig-drasil-front/frontend2/* /var/www/html
 
     # Allow traffic
     - ufw allow 'OpenSSH'
@@ -128,6 +130,12 @@ runcmd:
     # Enable and start nginx
     - systemctl enable nginx
     - systemctl restart nginx
+
+    # Install node modules
+    #- cd ig-drasil-front/frontend2
+    #- npm install
+    #- npm audit fix
+    
 
     # sudo scp -r clouduser@172.24.0.163:/certs/cert.crt /usr/local/share/ca-certificates/back.crt
     # ZGg8rQpu5bwJs7v
