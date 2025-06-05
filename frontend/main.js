@@ -167,20 +167,8 @@ function openActionWebSocket() {
 //   a[2] = brake        (+0.8 when down is held, 0 otherwise)
 let a = [0.0, 0.0, 0.0];
 
-// Prevent arrow keys from scrolling the page
-window.addEventListener(
-    "keydown",
-    function (e) {
-        const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
-        if (arrowKeys.includes(e.key)) {
-            e.preventDefault();
-        }
-    },
-    { passive: false }
-);
-
-// --- KEYDOWN Handler ---
-window.addEventListener("keydown", function (e) {
+function onKeyDownSendAction(e) {
+    // Update the action vector as in your keydown handler
     switch (e.key) {
         case "ArrowLeft":
             a[0] = -1.0;
@@ -192,17 +180,17 @@ window.addEventListener("keydown", function (e) {
             a[1] = +1.0;
             break;
         case "ArrowDown":
-            // Using 0.8 so that wheels “block” rotation instead of full stop
             a[2] = +0.8;
             break;
         default:
-            // do nothing for other keys
-            break;
+            return; // Ignore other keys
     }
-});
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: a }));
+    }
+}
 
-// --- KEYUP Handler ---
-window.addEventListener("keyup", function (e) {
+function onKeyUpSendAction(e) {
     switch (e.key) {
         case "ArrowLeft":
         case "ArrowRight":
@@ -215,10 +203,12 @@ window.addEventListener("keyup", function (e) {
             a[2] = 0.0;
             break;
         default:
-            // nothing to do
-            break;
+            return;
     }
-});
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: a }));
+    }
+}
 
 // --------------
 // 6. Kick off negotiation as soon as the page loads

@@ -15,4 +15,6 @@ asyncpg
 # gunicorn server
 gunicorn
 uvicorn
+uvicorn[standard]
+websockets
 uvloop
