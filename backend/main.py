@@ -262,7 +262,7 @@ session_data_lock = asyncio.Lock()
 session_queues: Dict[str, asyncio.Queue] = {}
 
 # Model inference server URL
-MODEL_URL = "http://192.24.0.9:443/predict"
+MODEL_URL = "https://192.24.0.9:443/predict"
 
 async def cleanup(session_id: str):
     """
