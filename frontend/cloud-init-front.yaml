@@ -132,5 +132,6 @@ runcmd:
     # sudo scp -r clouduser@172.24.0.163:/certs/cert.crt /usr/local/share/ca-certificates/back.crt
     # ZGg8rQpu5bwJs7v
     # sudo update-ca-certificates
+    # Cambiar la IP en main.js a la del frontend
 
 final_message: "Frontend server is up and running!"
