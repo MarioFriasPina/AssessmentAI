@@ -10,6 +10,9 @@ ipykernel
 swig
 gymnasium[box2d]
 stable_baselines3
+stable_baselines3[extra]
+ipywidgets
+tensorboard
 
 # For running the backend server
 litserve
