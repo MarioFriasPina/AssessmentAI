@@ -82,7 +82,7 @@ runcmd:
 
     # Generate self-signed SSL cert
     - mkdir /etc/ssl/igdrasil
-    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/key.pem -out /etc/ssl/igdrasil/cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=ig-drasil-front.com"
+    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/key.pem -out /etc/ssl/igdrasil/cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=backend.igdrasil.local"
     - chmod 755 /etc/ssl/igdrasil/key.pem
     - chmod 755 /etc/ssl/igdrasil/cert.crt
 

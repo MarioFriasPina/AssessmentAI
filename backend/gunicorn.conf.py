@@ -1,7 +1,7 @@
 """ Gunicorn configuration file for the backend server."""
 import multiprocessing
 
-bind = "0.0.0.0:443"
+bind = "0.0.0.0:80"
 workers = multiprocessing.cpu_count() * 2 + 1
 
 wsgi_app = "main:app"
@@ -16,7 +16,7 @@ access_log_format = (
     '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 )
 
-#ssl_context = ('/etc/ssl/igdrasil/key.pem', '/etc/ssl/igdrasil/cert.crt')
-
 keyfile='/etc/ssl/igdrasil/key.pem'
 certfile='/etc/ssl/igdrasil/cert.crt'
+
+worker_class = "uvicorn.workers.UvicornWorker"

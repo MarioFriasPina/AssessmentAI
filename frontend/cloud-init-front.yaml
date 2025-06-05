@@ -26,13 +26,12 @@ package_update: true
 package_upgrade: true
 
 packages:
-    - nginx
-    - openssl
-    - ufw
+    - openssh-client
     - curl
-    - openssh-server
-    - htop
     - git
+    - nginx
+    - ufw
+    - htop
     - nodejs
     - npm
 
@@ -61,16 +60,18 @@ write_files:
           }
 
 runcmd:
+    # Get my IP to add to env
+    - BACKEND_IP="172.24.0.15"
+
     # Enable and start ssh
     - systemctl enable ssh
     - systemctl restart ssh
 
-    # Add backend server cert to frontend server and update CA certificates
+    # Create ssh key with current IP
     - mkdir /etc/ssl/igdrasil
-    - scp clouduser@172.24.0.220:/etc/ssl/igdrasil/cert.crt /etc/ssl/igdrasil/cert.crt
-    - scp clouduser@172.24.0.220:/etc/ssl/igdrasil/key.pem /etc/ssl/igdrasil/key.pem
-    - cp /etc/ssl/igdrasil/cert.crt /usr/local/share/ca-certificates/igdrasil.crt
-    - update-ca-certificates
+    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/key.pem -out /etc/ssl/igdrasil/cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=backend.igdrasil.local"
+    - chmod 755 /etc/ssl/igdrasil/key.pem
+    - chmod 755 /etc/ssl/igdrasil/cert.crt
 
     # Get the repository
     - export GIT_TERMINAL_PROMPT=0
