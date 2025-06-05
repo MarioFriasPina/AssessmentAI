@@ -1,8 +1,8 @@
 const backendHost = "localhost:443";
 const REST_URL = `https://${backendHost}/api/offer`;
-const WS_USER = `wss://${backendHost}/video_user`;
-const WS_RL = `wss://${backendHost}/video_rl`;
-const WS_ACTION = `wss://${backendHost}/ws`;
+const WS_USER = `wss://${backendHost}/ws/video_user`;
+const WS_RL = `wss://${backendHost}/ws/video_rl`;
+const WS_ACTION = `wss://${backendHost}/ws/ws`;
 
 const video_user = document.getElementById("video_user");
 const video_rl = document.getElementById("video_rl");
@@ -28,6 +28,13 @@ function startVideoStreams() {
     ws_user.onmessage = (event) => {
         const blob = new Blob([event.data], { type: "image/jpeg" });
         video_user.src = URL.createObjectURL(blob);
+        // Hide loading overlay on first frame
+        if (loading_user.style.display !== "none") {
+            loading_user.style.display = "none";
+        }
+    };
+    ws_user.onclose = ws_user.onerror = () => {
+        loading_user.style.display = "flex";
     };
 
     ws_rl = new WebSocket(`${WS_RL}?session_id=${session_id}`);
@@ -35,6 +42,13 @@ function startVideoStreams() {
     ws_rl.onmessage = (event) => {
         const blob = new Blob([event.data], { type: "image/jpeg" });
         video_rl.src = URL.createObjectURL(blob);
+        // Hide loading overlay on first frame
+        if (loading_rl.style.display !== "none") {
+            loading_rl.style.display = "none";
+        }
+    };
+    ws_rl.onclose = ws_rl.onerror = () => {
+        loading_rl.style.display = "flex";
     };
 }
 
@@ -92,7 +106,11 @@ function onKeyUpSendAction(e) {
     }
 }
 
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
+    // Always show loading overlays at start
+    loading_user.style.display = "flex";
+    loading_rl.style.display = "flex";
+    await startSession();
     startVideoStreams();
     startActionWebSocket();
 });
