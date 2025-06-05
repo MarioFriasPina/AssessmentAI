@@ -1,7 +1,7 @@
 // --------------
 // 1. Configuration
 // --------------
-const backendHost = "172.24.0.237:443"; // your backend address (with port)
+const backendHost = "172.24.0.243:80"; // your backend address (with port)
 const REST_URL = `http://${backendHost}/offer`;
 const WS_ORIGIN = `ws://${backendHost}/ws`;
 
