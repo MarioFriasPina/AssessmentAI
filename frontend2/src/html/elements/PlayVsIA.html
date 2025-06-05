@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<html lang="en">
+<!-- [Head] start -->
+
+<head>
+  @@include('../layouts/head-page-meta.html', {'title': 'Game'}) @@include('../layouts/head-css.html')
+</head>
+<!-- [Head] end -->
+<!-- [Body] Start -->
+
+<body @@bodySetup>
+  @@include('../layouts/layout-vertical.html')
+
+  <!-- [ Main Content ] start -->
+  <div class="pc-container">
+    <div class="pc-content">
+      @@include('../layouts/breadcrumb.html', {'breadcrumb-item': 'PlayVsIA', 'breadcrumb-item-active': 'Game'})
+
+      <!-- [ Main Content ] start -->
+      <div class="row">
+        <!-- [ Typography ] start -->
+       <div class="col-md-6">
+          <div class="card">
+            <div class="card-header">
+              <h5>You</h5>
+            </div>
+            <div class="card-body pc-component">
+              <div style="position: relative; width: 100%; max-width: 600px; height: 400px;">
+                <video
+                  id="video_user"
+                  autoplay
+                  playsinline
+                  style="width: 100%; height: 100%;"
+                ></video>
+                <div id="loading_user" class="loading-overlay">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header">
+              <h5>IA NPC</h5>
+            </div>
+            <div class="card-body pc-component">
+              <div style="position: relative; width: 100%; max-width: 600px; height: 400px;">
+                <video
+                  id="video_rl"
+                  autoplay
+                  playsinline
+                  style="width: 100%; height: 100%;"
+                ></video>
+                <div id="loading_rl" class="loading-overlay">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- [ Typography ] end -->
+      </div>
+      <!-- [ Main Content ] end -->
+    </div>
+  </div>
+  <!-- [ Main Content ] end -->
+  @@include('../layouts/footer-block.html') @@include('../layouts/footer-js.html')
+</body>
+<!-- [Body] end -->
+</html>
