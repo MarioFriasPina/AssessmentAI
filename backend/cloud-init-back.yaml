@@ -76,16 +76,13 @@ write_files:
           WantedBy=multi-user.target
 
 runcmd:
-    # Get my IP to add to env
-    - MYIP="$(hostname -I | awk '{print $1}')"
-
     # Enable and start ssh
     - systemctl enable ssh
     - systemctl restart ssh
 
     # Generate self-signed SSL cert
     - mkdir /etc/ssl/igdrasil
-    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/key.pem -out /etc/ssl/igdrasil/cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=$MYIP"
+    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/key.pem -out /etc/ssl/igdrasil/cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=backend.igdrasil.local"
     - chmod 755 /etc/ssl/igdrasil/key.pem
     - chmod 755 /etc/ssl/igdrasil/cert.crt
 
