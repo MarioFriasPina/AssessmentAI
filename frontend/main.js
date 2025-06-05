@@ -1,174 +1,57 @@
-// --------------
-// 1. Configuration
-// --------------
-const backendHost = "localhost:443"; // your backend address (with port)
-const REST_URL = `https://${backendHost}/offer`;
-const WS_ORIGIN = `wss://${backendHost}/ws`;
+const backendHost = "localhost:443";
+const REST_URL = `https://${backendHost}/api/offer`;
+const WS_USER = `wss://${backendHost}/video_user`;
+const WS_RL = `wss://${backendHost}/video_rl`;
+const WS_ACTION = `wss://${backendHost}/ws`;
 
-// References to two <video> tags and loaders in index.html:
 const video_user = document.getElementById("video_user");
 const video_rl = document.getElementById("video_rl");
 const loading_user = document.getElementById("loading_user");
 const loading_rl = document.getElementById("loading_rl");
 
-// We’ll hold these at top‐level so they can be reused in event handlers:
-let pc; // RTCPeerConnection
-let ws; // WebSocket (for sending “action”)
-let session_id; // the UUID we get back from /offer
+let ws_user, ws_rl, ws_action, session_id;
 
-// --------------
-// 2. Create RTCPeerConnection and set up <video> handlers
-// --------------
-function setupPeerConnection() {
-    pc = new RTCPeerConnection({
-        iceServers: [
-            // You can add TURN or STUN servers here if needed
-            { urls: "stun:stun.l.google.com:19302" },
-        ],
-    });
-
-    // We know our backend will send exactly two video tracks:
-    //   • first track → user (human) CarRacing
-    //   • second track → RL CarRacing
-    let trackCount = 0;
-    pc.ontrack = (evt) => {
-        if (evt.track.kind !== "video") return;
-
-        trackCount += 1;
-        const stream = new MediaStream([evt.track]);
-
-        if (trackCount === 1) {
-            // First video track = user
-            video_user.srcObject = stream;
-            loading_user.style.display = "none";
-        } else if (trackCount === 2) {
-            // Second video track = RL
-            video_rl.srcObject = stream;
-            loading_rl.style.display = "none";
-        } else {
-            console.warn("Received more than 2 tracks – ignoring extras");
-        }
-    };
-
-    // We explicitly tell the browser we only want to receive two "video" transceivers:
-    pc.addTransceiver("video", { direction: "recvonly" });
-    pc.addTransceiver("video", { direction: "recvonly" });
+// Send an offer to the backend to start a new session
+async function startSession() {
+    const response = await fetch(REST_URL, { method: "POST" });
+    const data = await response.json();
+    session_id = data.session_id;
 }
 
-// --------------
-// 3. negotiate(): createOffer() → wait ICE → POST to /offer → setAnswer → open WebSocket
-// --------------
-async function negotiate() {
-    // a) Make sure PC is initialized
-    setupPeerConnection();
-
-    // b) Create an SDP offer
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    // c) WAIT for ICE gathering to finish (so our SDP includes all candidates)
-    await new Promise((resolve) => {
-        if (pc.iceGatheringState === "complete") {
-            resolve();
-        } else {
-            function checkState() {
-                if (pc.iceGatheringState === "complete") {
-                    pc.removeEventListener(
-                        "icegatheringstatechange",
-                        checkState
-                    );
-                    resolve();
-                }
-            }
-            pc.addEventListener("icegatheringstatechange", checkState);
-        }
-    });
-
-    // d) POST the completed localDescription to /offer
-    const payload = {
-        sdp: pc.localDescription.sdp,
-        type: pc.localDescription.type,
-    };
-
-    let resp;
-    try {
-        resp = await fetch(REST_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
-    } catch (err) {
-        console.error("Failed to reach /offer:", err);
-        return;
-    }
-
-    if (!resp.ok) {
-        console.error("Server returned error:", await resp.text());
-        return;
-    }
-
-    const answerJson = await resp.json();
-    // answerJson === { sdp: "...", type: "answer", session_id: "<UUID>" }
-
-    // e) Save the session_id for our WebSocket
-    session_id = answerJson.session_id;
-    console.log("Received session_id from server:", session_id);
-
-    // f) Set the server’s SDP answer as our remote description
-    await pc.setRemoteDescription({
-        sdp: answerJson.sdp,
-        type: answerJson.type,
-    });
-
-    // g) Now that we have a valid session_id, open the WebSocket:
-    openActionWebSocket();
-}
-
-// --------------
-// 4. openActionWebSocket(): connect to ws://.../ws?session_id=<UUID>
-// --------------
-function openActionWebSocket() {
+function startVideoStreams() {
     if (!session_id) {
         console.error("Cannot open WebSocket: no session_id yet");
         return;
     }
+    ws_user = new WebSocket(`${WS_USER}?session_id=${session_id}`);
+    ws_user.binaryType = "arraybuffer";
+    ws_user.onmessage = (event) => {
+        const blob = new Blob([event.data], { type: "image/jpeg" });
+        video_user.src = URL.createObjectURL(blob);
+    };
 
-    ws = new WebSocket(`${WS_ORIGIN}?session_id=${session_id}`);
-
-    ws.addEventListener("open", () => {
-        console.log(`WebSocket opened (session_id=${session_id})`);
-    });
-
-    ws.addEventListener("message", (evt) => {
-        // Our server does not send us any data back on this channel,
-        // but if you ever want ACKs or logging, handle it here:
-        console.log("WS ←", evt.data);
-    });
-
-    ws.addEventListener("close", (evt) => {
-        console.warn(`WebSocket closed (code=${evt.code})`);
-    });
-
-    ws.addEventListener("error", (err) => {
-        console.error("WebSocket error:", err);
-    });
-
-    // Hook arrow‐key events to send { action: … } JSON over this WebSocket:
-    document.addEventListener("keydown", onKeyDownSendAction);
-    document.addEventListener("keyup", onKeyUpSendAction);
+    ws_rl = new WebSocket(`${WS_RL}?session_id=${session_id}`);
+    ws_rl.binaryType = "arraybuffer";
+    ws_rl.onmessage = (event) => {
+        const blob = new Blob([event.data], { type: "image/jpeg" });
+        video_rl.src = URL.createObjectURL(blob);
+    };
 }
 
-// --------------
-// 5. Key handlers: send { action: … } or { action: 0 } over the WS
-// --------------
-// 'a' is  action vector:
-//   a[0] = left/right   (−1.0 for left, +1.0 for right, 0 otherwise)
-//   a[1] = throttle     (+1.0 when up is held, 0 otherwise)
-//   a[2] = brake        (+0.8 when down is held, 0 otherwise)
-let a = [0.0, 0.0, 0.0];
+function startActionWebSocket() {
+    if (!session_id) {
+        console.error("Cannot open WebSocket: no session_id yet");
+        return;
+    }
+    ws_action = new WebSocket(`${WS_ACTION}?session_id=${session_id}`);
+    ws_action.onopen = () => {
+        document.addEventListener("keydown", onKeyDownSendAction);
+        document.addEventListener("keyup", onKeyUpSendAction);
+    };
+}
 
+let a = [0.0, 0.0, 0.0];
 function onKeyDownSendAction(e) {
-    // Update the action vector as in your keydown handler
     switch (e.key) {
         case "ArrowLeft":
             a[0] = -1.0;
@@ -183,13 +66,12 @@ function onKeyDownSendAction(e) {
             a[2] = +0.8;
             break;
         default:
-            return; // Ignore other keys
+            return;
     }
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: a }));
+    if (ws_action && ws_action.readyState === WebSocket.OPEN) {
+        ws_action.send(JSON.stringify({ action: a }));
     }
 }
-
 function onKeyUpSendAction(e) {
     switch (e.key) {
         case "ArrowLeft":
@@ -205,16 +87,12 @@ function onKeyUpSendAction(e) {
         default:
             return;
     }
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: a }));
+    if (ws_action && ws_action.readyState === WebSocket.OPEN) {
+        ws_action.send(JSON.stringify({ action: a }));
     }
 }
 
-// --------------
-// 6. Kick off negotiation as soon as the page loads
-// --------------
 window.addEventListener("load", () => {
-    negotiate().catch((err) => {
-        console.error("negotiate() failed:", err);
-    });
+    startVideoStreams();
+    startActionWebSocket();
 });

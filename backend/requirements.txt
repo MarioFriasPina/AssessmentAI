@@ -1,12 +1,9 @@
-
 gymnasium[box2d]
 opencv-python
 fastapi
-aiortc
 aiosqlite
 python-multipart
 aiohttp
-av
 bcrypt
 pyjwt
 sqlalchemy[asyncio] 

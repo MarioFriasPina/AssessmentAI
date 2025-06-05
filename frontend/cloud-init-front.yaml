@@ -41,7 +41,7 @@ write_files:
     - path: /etc/nginx/sites-available/default
       content: |
           upstream api_backend {
-              server 172.24.0.204:443;
+              server 172.24.0.24:443;
               # Add more servers here for load balancing
               # server 172.24.0.205:443;
               # server 172.24.0.206:443;
@@ -58,19 +58,19 @@ write_files:
                   root /var/www/html;
                   index index.html index.htm;
                   if ($request_method = OPTIONS ) {
-                      add_header 'Access-Control-Allow-Origin' 'https://172.24.0.204';
+                      add_header 'Access-Control-Allow-Origin' 'https://172.24.0.24';
                       add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
                       add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type';
                       add_header 'Access-Control-Max-Age' 1728000;
                       add_header 'Content-Length' 0;
                       add_header 'Content-Type' 'text/plain charset=UTF-8';
-                      return 204;
+                      return 24;
                   }
                   if ($request_method = GET ) {
-                      add_header 'Access-Control-Allow-Origin' 'https://172.24.0.204';
+                      add_header 'Access-Control-Allow-Origin' 'https://172.24.0.24';
                   }
                   if ($request_method = POST ) {
-                      add_header 'Access-Control-Allow-Origin' 'https://172.24.0.204';
+                      add_header 'Access-Control-Allow-Origin' 'https://172.24.0.24';
                   }
               }
               location /ws {
@@ -128,7 +128,7 @@ runcmd:
     - systemctl enable nginx
     - systemctl restart nginx
 
-    # sudo scp -r clouduser@{IP}:/certs/cert.crt /usr/local/share/ca-certificates/back.crt
+    # sudo scp -r clouduser@172.24.0.24:/certs/cert.crt /usr/local/share/ca-certificates/back.crt
     # ZGg8rQpu5bwJs7v
     # sudo update-ca-certificates
 
