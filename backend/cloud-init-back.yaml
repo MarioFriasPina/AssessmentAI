@@ -101,9 +101,6 @@ runcmd:
     - su - clouduser -c "/home/clouduser/ig-drasil-back/venv/bin/pip install --upgrade pip"
     - su - clouduser -c "/home/clouduser/ig-drasil-back/venv/bin/pip install -r /home/clouduser/ig-drasil-back/backend/requirements.txt"
 
-    # Background HTTP server
-    - nohup python3 -m http.server 8080 --directory /srv/igdrasil-certs --bind 0.0.0.0 >/dev/null 2>&1 &
-
     - systemctl daemon-reload
     - systemctl enable ig-drasil-back.service
     - systemctl start ig-drasil-back.service

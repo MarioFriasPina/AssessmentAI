@@ -26,25 +26,26 @@ package_update: true
 package_upgrade: true
 
 packages:
-    - openssh-client
-    - curl
-    - git
     - nginx
+    - openssl
     - ufw
+    - curl
+    - openssh-server
     - htop
+    - git
     - nodejs
     - npm
 
 write_files:
-    # Append backend to hosts file
-    - path: /etc/hosts
-      content: |
-          172.24.0.200 backend.igdrasil.local
-      append: true
-
     # Nginx configuration
     - path: /etc/nginx/sites-available/default
       content: |
+          server {
+              listen 80;
+              server_name ig-drasil-front;
+              return 301 https://$host$request_uri;
+          }
+
           server {
               listen 443 ssl;
 
@@ -58,56 +59,20 @@ write_files:
                   index index.html index.htm;
               }
           }
-          server {
-              listen 80;
-              server_name ig-drasil-front;
-
-              location / {
-                  return 301 https://$host$request_uri;
-              }
-          }
 
 runcmd:
     # Get my IP to add to env
-    - MY_IP="$(hostname -I | awk '{print $1}')"
+    - MYIP="$(hostname -I | awk '{print $1}')"
 
     # Enable and start ssh
     - systemctl enable ssh
     - systemctl restart ssh
 
-    # 1) Wait until the backend’s HTTP server is up
-    - |
-        BACKEND_HOST="backend.igdrasil.local"
-        n=0
-        until nc -z -w3 $BACKEND_HOST 8080; do
-            n=$((n+1))
-            if [ $n -gt 10 ]; then
-            echo "ERROR: backend HTTP server never became reachable" >&2
-            exit 1
-            fi
-            echo "Waiting for backend HTTP…"
-            sleep 2
-        done
-        echo "Backend HTTP is now up"
-
-    # 2) Create local directory for the cert
-    - mkdir -p /etc/ssl/igdrasil
-
-    # 3) Download the backend’s cert + key via HTTP
-    - wget -O /etc/ssl/igdrasil/cert.crt http://backend.igdrasil.local:8080/cert.crt
-    - wget -O /etc/ssl/igdrasil/key.pem  http://backend.igdrasil.local:8080/key.pem
-    - chmod 644 /etc/ssl/igdrasil/cert.crt
-    - chmod 600 /etc/ssl/igdrasil/key.pem
-
-    # 4) Install the cert into the frontend’s trust store
-    - cp /etc/ssl/igdrasil/cert.crt /usr/local/share/ca-certificates/igdrasil-backend.crt
-    - update-ca-certificates
-
-    # Create ssh key with current IP
+    # Create the SSL cert
     - mkdir /etc/ssl/igdrasil
-    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/front_key.pem -out /etc/ssl/igdrasil/front_cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=${MY_IP}"
-    - chmod 755 /etc/ssl/igdrasil/front_key.pem
-    - chmod 755 /etc/ssl/igdrasil/front_cert.crt
+    - openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout /etc/ssl/igdrasil/key.pem -out /etc/ssl/igdrasil/cert.crt -subj "/C=MX/ST=CDMX/L=CDMX/O=Ig-Drasil/CN=${MYIP}"
+    - chmod 755 /etc/ssl/igdrasil/key.pem
+    - chmod 755 /etc/ssl/igdrasil/cert.crt
 
     # Get the repository
     - export GIT_TERMINAL_PROMPT=0
