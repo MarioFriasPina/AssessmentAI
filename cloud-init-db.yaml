@@ -1,0 +1,45 @@
+#cloud-config
+
+hostname: ig-drasil-db
+fqdn: ig-drasil-db.local
+
+users:
+    - name: clouduser
+      gecos: Main User
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      groups: users, admin
+      shell: /bin/bash
+      lock_passwd: false
+      ssh_pwauth: true
+      ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJDFw8JXs6SYG59y+G6D9O7GtzrvS0StnUqDUYlh2wrI Sec. Tec. DGDH@DESKTOP-UPQCCKE
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC9Yj/fWkE13i9xt0rAkgaKGTvuDgGZ4uqqveuaDSafnKqvE0CuzajiEVie4LEwPsw1XfD9T6Fj06Oi8vqDJkKi0QZRcsJRrQXWJj1I0LqPSoATL2lxGBB4z0MSDdtd+hSxUZHHvJjHCLVBjoeZGOBzoYY4SEVDhgbgLMbp2vJoHGuhRLCNLfhrcHY6VGVf+Q85hci2jQroksH+bpOI+Dgtch0BPIcxM7Zr4XbSaCxkOXOwM+VMvY1Ey29wJwNUZrZyRdRcNIQp8WVbS/rtO/0pPqjf2KPHmofWA1kRvGNLgh1q2kDU2MwGefz+XEA6A+56J2BorHh6IFtOFAWJDQ3zKvUd22AxusrdFGf9eBXTi/u4M0O2ctxRBg1d01m0PBWJc2i+ELOt9YfQ7OgFW9o1YtQ/PdHhriFqEQaFtLc4m6qFKHf6J27WBSMLuhnAHUsidD1auDGHEprBk3zygrloLS00rmRsn3p0sNIfKGUsukcroz/geTwI4INeeWpZN6k= mfrias@LAPTOP-MARIO
+# Explicit password configuration
+chpasswd:
+    list: |
+        clouduser:ZGg8rQpu5bwJs7v
+    expire: false
+
+# Allow password-based SSH login
+ssh_pwauth: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+    -postgresql 
+    -postgresql-contrib
+
+write_files:
+
+runcmd:
+    - sudo -i -u postgres
+    - createdb igdrasil
+    - psql -U postgres -c "CREATE USER clouduser WITH PASSWORD 'Mnb@sdpoi87';"
+    - psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE igdrasil TO clouduser;"
+    - psql -d igdrasil
+    - CREATE TABLE users (id SERIAL PRIMARY KEY,name VARCHAR(255),name_last VARCHAR(255),email VARCHAR(255) UNIQUE,password VARCHAR(255) NOT NULL,runs INTEGER DEFAULT 0,wins INTEGER DEFAULT 0,record INTEGER DEFAULT 0);
+    - GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE users TO clouduser;
+    #modify the listen_addresses in postgresql.conf to allow remote connections 
+    #and the file pg_hba.conf to allow any ip address to connect to the database
+    #then restart the postgresql service
