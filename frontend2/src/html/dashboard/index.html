@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- [Head] start -->
+
+<head>
+  @@include('../layouts/head-page-meta.html', {'title': 'Home'}) @@include('../layouts/head-css.html')
+</head>
+<!-- [Head] end -->
+<!-- [Body] Start -->
+
+<body @@bodySetup>
+  @@include('../layouts/layout-vertical.html')
+
+  <!-- [ Main Content ] start -->
+  <div class="pc-container">
+    <div class="pc-content">
+      @@include('../layouts/breadcrumb.html', {'breadcrumb-item': 'Dashboard', 'breadcrumb-item-active': 'Home'})
+      <!-- [ Main Content ] start -->
+      <div class="row">
+        <!-- [ sample-page ] start -->
+        <div class="col-md-6 col-xl-3">
+          <div class="card">
+            <div class="card-body">
+              <h6 class="mb-2 f-w-400 text-muted">Best time</h6>
+              <h4 id="bestTime" class="mb-3"></h4>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="card">
+            <div class="card-body">
+              <h6 class="mb-2 f-w-400 text-muted">Average time per game</h6>
+              <h4 id="avgTime" class="mb-3"></h4>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="card">
+            <div class="card-body">
+              <h6 class="mb-2 f-w-400 text-muted">Games won</h6>
+              <h4 id="wins" class="mb-3"></h4>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="card">
+            <div class="card-body">
+              <h6 class="mb-2 f-w-400 text-muted">Lost games</h6>
+              <h4 id="losses" class="mb-3"></h4>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-12 col-xl-12">
+        <div class="col-md-12 col-xl-12">
+          <h5 class="mb-3">Score board</h5>
+          <div class="card tbl-card">
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover table-borderless mb-0">
+                  <thead>
+                    <tr>
+                      <th>Names</th>
+                      <th>Times</th>
+                      <th>Dates</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody  id="scoreTableBody">
+
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+                </div>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- [ Main Content ] end -->
+  @@include('../layouts/footer-block.html')
+
+  <!-- [Page Specific JS] start -->
+  <script src="../assets/js/plugins/apexcharts.min.js"></script>
+  <script src="../assets/js/pages/dashboard-default.js"></script>
+  <script src="../assets/js/pages/ScoreBoard.js"></script>
+  
+  <!-- [Page Specific JS] end -->
+  @@include('../layouts/footer-js.html')
+</body>
+<!-- [Body] end -->
+
+</html>
