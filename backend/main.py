@@ -3,7 +3,7 @@
 from typing import Any, Dict
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import base64
 import os
 import uuid
@@ -15,13 +15,12 @@ import aiohttp
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import gymnasium as gym
 from pylibsrtp import Session
-import uvicorn
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 from av import VideoFrame
-from sqlalchemy import create_engine, MetaData, Column, Integer, String, Select
+from sqlalchemy import create_engine, MetaData, Column, Integer, String, Select, DateTime, asc, desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from pydantic import BaseModel
@@ -38,13 +37,13 @@ DATABASE_URL = "sqlite+aiosqlite:///./test.db"  # Change this to your database U
 # Create the SQLAlchemy engine
 engine_base = create_async_engine(DATABASE_URL, echo=True)
 engine = sessionmaker(
-    bind=engine_base,
+    bind=engine_base,  # type: ignore
     class_=AsyncSession,
     expire_on_commit=False,
-)
+)  # type: ignore
 
 # Create a configured "Session" class
-#SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Create a base class for declarative models
 Base = declarative_base()
@@ -56,7 +55,7 @@ metadata = MetaData()
 
 # region Crypt
 
-SECRET_KEY = os.getenv('SECRET', '123')
+SECRET_KEY = os.getenv('SECRET', 'verysecure')
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -75,12 +74,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), decoded_hashed)
 
 
-def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.now() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + \
+            timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -102,9 +102,9 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 # region Databases
 
 
-async def get_db() -> AsyncSession:
-    async with engine() as session:
-        yield session
+async def get_db() -> AsyncSession:  # type: ignore
+    async with engine() as session:  # type: ignore
+        yield session  # type: ignore
 
 
 class User(Base):
@@ -120,6 +120,8 @@ class User(Base):
     wins = Column(Integer, default=0)
 
     record = Column(Integer, default=0)
+
+    last_game = Column(DateTime, default=datetime.now(timezone.utc))
 
 # end region
 
@@ -144,6 +146,11 @@ class UserData(BaseModel):
     total: int
     record: float
 
+
+class LeaderboardEntry(BaseModel):
+    name: str
+    score: int
+    date: datetime
 
 # end region
 
@@ -189,7 +196,7 @@ async def init_db():
 
 
 @app.post('/token')
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)) -> str:
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)) -> dict[str, str | int]:
     query = Select(User).where(User.email == form_data.username)
     result = await db.execute(query)
 
@@ -200,14 +207,18 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
     user: User = res[0]
 
-    if verify_password(form_data.password, user.password):
+    if verify_password(form_data.password, str(user.password)):
 
-        return create_access_token(
-            {
-                'user': user.name,
-                'email': user.email,
-            }
-        )
+        return {
+            "access_token": create_access_token(
+                {
+                    'user': user.name,
+                    'email': user.email,
+                }
+            ),
+            "token_type": "bearer",
+            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES
+        }
 
     raise HTTPException(403, 'Invalid username or password')
 
@@ -225,17 +236,39 @@ async def create_user(data: NewUser, db: AsyncSession = Depends(get_db)) -> str:
 
     return "success"
 
+# region userdata
 
 @app.get('/data')
-async def get_data(current_user: dict = Depends(get_current_user)):
+async def get_data(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    query = Select(User).where(User.email == current_user['email'])
+    result = await db.execute(query)
+
+    res = result.first()
+
+    if res is None:
+        raise HTTPException(403, 'Invalid username or password')
+
+    user: User = res[0]
 
     return UserData(
-        win=0,
-        loss=0,
-        total=0,
-        record=0,
+        win=user.wins, # type: ignore
+        loss=user.runs - user.wins, # type: ignore
+        total=user.runs, # type: ignore
+        record=user.record, # type: ignore
     )
 
+
+@app.get('/leaderboard')
+async def get_leaderboard(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)) -> list[LeaderboardEntry]:
+    query = Select(User).order_by(User.record.desc()).limit(20)
+    result = await db.execute(query)
+
+    res = result.all()
+
+    if res is None:
+        raise HTTPException(403, 'Invalid username or password')
+
+    return [LeaderboardEntry(name=i[0].name, score=i[0].record, date=i[0].last_game) for i in res]
 
 # end region
 # region Video endpoints
@@ -264,6 +297,7 @@ session_queues: Dict[str, asyncio.Queue] = {}
 # Model inference server URL
 MODEL_URL = "https://192.24.0.9:443/predict"
 
+
 async def cleanup(session_id: str):
     """
     Tear down everything associated with a given session_id:
@@ -288,19 +322,22 @@ async def cleanup(session_id: str):
 
     # Stop the video tracks (this will also close aiohttp sessions in RLVideoTrack)
     try:
-        await user_track.stop()
+        await user_track.stop()  # type: ignore
     except Exception as e:
-        logger.warning(f"Error stopping UserVideoTrack for session {session_id}: {e}")
+        logger.warning(
+            f"Error stopping UserVideoTrack for session {session_id}: {e}")
     try:
         await rl_track.stop()
     except Exception as e:
-        logger.warning(f"Error stopping RLVideoTrack for session {session_id}: {e}")
+        logger.warning(
+            f"Error stopping RLVideoTrack for session {session_id}: {e}")
 
     # Close the PeerConnection
     try:
         await pc.close()
     except Exception as e:
-        logger.warning(f"Error closing PeerConnection for session {session_id}: {e}")
+        logger.warning(
+            f"Error closing PeerConnection for session {session_id}: {e}")
     pcs.discard(pc)
 
     # Close gym environments
@@ -349,7 +386,7 @@ class UserVideoTrack(VideoStreamTrack):
         result = await asyncio.get_event_loop().run_in_executor(
             executor, self.env.step, action
         )
-        obs, reward, done, info = result
+        obs, reward, done, info = result  # type: ignore
         if done:
             # If episode ended, reset before rendering the next frame
             obs = await asyncio.get_event_loop().run_in_executor(
@@ -361,7 +398,8 @@ class UserVideoTrack(VideoStreamTrack):
             executor, self.env.render
         )
 
-        video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
+        video_frame = VideoFrame.from_ndarray(
+            frame, format="rgb24")  # type: ignore
         video_frame.pts = pts
         video_frame.time_base = time_base
         return video_frame
@@ -423,7 +461,8 @@ class RLVideoTrack(VideoStreamTrack):
             try:
                 action = await self.get_remote_action(frame)
             except Exception as e:
-                logger.error(f"AI inference failed (falling back to random): {e}")
+                logger.error(
+                    f"AI inference failed (falling back to random): {e}")
                 action = self.env.action_space.sample()
             self.last_action = action
         else:
@@ -433,7 +472,7 @@ class RLVideoTrack(VideoStreamTrack):
         result = await asyncio.get_event_loop().run_in_executor(
             executor, self.env.step, action
         )
-        obs, reward, done, info = result
+        obs, reward, done, info = result  # type: ignore
         if done:
             obs = await asyncio.get_event_loop().run_in_executor(
                 executor, self.env.reset
@@ -441,15 +480,16 @@ class RLVideoTrack(VideoStreamTrack):
 
         self.frame_counter += 1
 
-        video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
+        video_frame = VideoFrame.from_ndarray(
+            frame, format="rgb24")  # type: ignore
         video_frame.pts = pts
         video_frame.time_base = time_base
         return video_frame
 
-    async def stop(self):
+    async def stop(self):  # type: ignore
         # Close the aiohttp session when stopping the track
         try:
-            await super().stop()
+            await super().stop()  # type: ignore
         except Exception:
             pass
         try:
@@ -487,7 +527,8 @@ async def offer(request: Request):
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
         if pc.iceConnectionState in ("failed", "disconnected", "closed"):
-            logger.info(f"Connection state {pc.iceConnectionState} for session {session_id}; cleaning up")
+            logger.info(
+                f"Connection state {pc.iceConnectionState} for session {session_id}; cleaning up")
             await cleanup(session_id)
 
     # Set remote description (the client's offer)
@@ -495,7 +536,8 @@ async def offer(request: Request):
     await pc.setRemoteDescription(_offer)
 
     # Create Gym environments
-    env_user = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
+    env_user = gym.make(
+        "CarRacing-v3", render_mode="rgb_array", continuous=True)
     env_user.reset()
     env_rl = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
     env_rl.reset()
@@ -595,6 +637,8 @@ async def shutdown_all():
     return {"status": "all sessions cleaned up"}
 
 # Add default path for health check
+
+
 @app.get("/")
 async def root():
     """
