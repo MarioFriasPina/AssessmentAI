@@ -27,6 +27,7 @@ import bcrypt
 import jwt
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 import uvloop
+import httpx
 
 
 # region Conf
