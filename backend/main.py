@@ -727,9 +727,9 @@ async def video_rl_stream(websocket: WebSocket):
         while True:
             try:
                 # call predict
-                res = await asyncio.get_running_loop().run_in_executor(executor, requests.post, f"https://{MODEL_URL}/predict", json={"state": obs})
+                res = requests.post(f"{BACKEND_URL}/predict", verify=False, json={"obs": obs[0].tolist()})
                 if res.status_code != 200:
-                    raise RuntimeError(f"Predict endpoint returned {res.status_code}")
+                    raise HTTPException(500, "AI is not available")
                 data = res.json().get("action")
                 ai_action = np.array(data, dtype=np.float32)
             except Exception as e:
