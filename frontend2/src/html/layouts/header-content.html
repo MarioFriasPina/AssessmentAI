@@ -24,15 +24,31 @@
       </div>
     </li>
 
-    <!-- BLOQUE DE PERFIL (AHORA YA NO ES UN ENLACE) -->
+    <!-- Profile block -->
     <li class="pc-h-item header-user-profile">
       <!-- Usamos un <div> o <span> en lugar de <a> -->
       <div class="pc-head-link arrow-none me-0" aria-label="Perfil">
         <img src="../assets/images/user/avatar-2.jpg"
              alt="user-image"
              class="user-avtar">
-        <span>Stebin Ben</span>
+        <!-- id="userName" to retrieve the name -->
+        <span id="userName">Stebin Ben</span>
       </div>
     </li>
   </ul>
 </div>
+
+<!-- ------------------------------- -->
+<!-- Dynamic name from localStorage  -->
+<!-- ------------------------------- -->
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const storedName = localStorage.getItem("name");
+    if (storedName) {
+      const el = document.getElementById("userName");
+      if (el) {
+        el.innerText = storedName;
+      }
+    }
+  });
+</script>
