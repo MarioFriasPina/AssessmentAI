@@ -1,4 +1,4 @@
-const backendHost = "localhost:443";
+const backendHost = "10.49.12.47:9999:443";
 const REST_URL = `https://${backendHost}/api/offer`;
 const WS_USER = `wss://${backendHost}/ws/video_user`;
 const WS_RL = `wss://${backendHost}/ws/video_rl`;
