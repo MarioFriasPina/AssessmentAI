@@ -361,7 +361,7 @@ session_queues: Dict[str, asyncio.Queue] = {}
 MODEL_URL = "https://192.24.0.9:443/predict"
 
 
-async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
+async def cleanup(session_id: str):
     """
     Tear down everything associated with a given session_id:
       - Close gym environments
@@ -374,6 +374,8 @@ async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
     if not info:
         return
     
+    db = await get_db()
+    
     env_user = info["env_user"]
     env_rl = info["env_rl"]
 
@@ -382,6 +384,7 @@ async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
     if not user_email:
         raise HTTPException(status_code=401, detail="Invalid token or invalid email.")
     else:
+        logger.info(f"User {user_email} ended a game")
         # Add current and new stats
         query = Select(User).where(User.email == user_email)
         result = await db.execute(query)
@@ -389,6 +392,8 @@ async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
         curr_runs = user.runs
         curr_wins = user.wins
         curr_record = user.record
+
+        logger.info("Updating user stats...")
 
         # Update user stats
         update_query = update(User).where(User.email == user_email).values(
@@ -400,6 +405,7 @@ async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
 
         # Only update the record if the current run is a new record
         if curr_record < info["best_reward"]:
+            logger.info(f"New record: {info['best_reward']}")
             update_query = update(User).where(User.email == user_email).values(
                 record = info["best_reward"],
                 last_game = info["last_game"]
