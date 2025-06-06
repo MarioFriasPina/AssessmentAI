@@ -17,9 +17,9 @@ Para cumplir con los requisitos, se creó un juego donde tengas que competir con
 
 El juego que elaboramos es uno para hacer carreras, donde tienes un carro de carreras el cual puedes controlae con acelerar, frenar y girar hacia ambos lados. 
 
-Para medir el desempeño, se mide que tan rapido esta llendo el carro, y lo dentro que esta de la pista. A su vez la distancia a la que se encuentra de la meta. 
+Para medir el desempeño, se mide que tan rápido esta yendo el carro, y lo dentro que esta de la pista. A su vez la distancia a la que se encuentra de la meta. 
 
-Una vez iniciado el juego, el jugador (ya sea humano o no, tiene que dar vueltas a la pista, hasta cumplir con una vuelta. una vez cumplida, se genera una puntuación y se le asigna esa misma al jugador. 
+Una vez iniciado el juego, el jugador (ya sea humano o no), tiene que dar vueltas a la pista, hasta cumplir con una vuelta. una vez cumplida, se genera una puntuación y se le asigna esa misma al jugador. 
 
 # Inteligencia Artificial (IA)
 
@@ -47,5 +47,5 @@ La capa de procesamiento, o 'backend' es utilizada para autenticar, autorizar y 
 
 Adicional al manejo de información, en esta capa es se procesan los datos principalmente, por esta razón, la capa es replicable, significando que pueden existir n cantidad de nodos, los cuales pueden expandirse dependiendo de la necesidad de computo y el uso en dado momento. 
 
-## Capa de servicio de datos estaticos y balanceo de nodos
+## Capa de servicio de datos estáticos y balanceo de nodos
 
