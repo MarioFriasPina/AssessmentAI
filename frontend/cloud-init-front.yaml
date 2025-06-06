@@ -58,7 +58,7 @@ write_files:
               ssl_certificate_key /etc/ssl/igdrasil/key.pem;
               location / {
                   root /var/www/html;
-                  index index.html index.htm;
+                  index login.html index.html index.htm;
                   if ($request_method = OPTIONS ) {
                       add_header 'Access-Control-Allow-Origin' 'https://172.24.0.163';
                       add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
