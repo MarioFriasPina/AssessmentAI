@@ -16,7 +16,7 @@ users:
           - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC9Yj/fWkE13i9xt0rAkgaKGTvuDgGZ4uqqveuaDSafnKqvE0CuzajiEVie4LEwPsw1XfD9T6Fj06Oi8vqDJkKi0QZRcsJRrQXWJj1I0LqPSoATL2lxGBB4z0MSDdtd+hSxUZHHvJjHCLVBjoeZGOBzoYY4SEVDhgbgLMbp2vJoHGuhRLCNLfhrcHY6VGVf+Q85hci2jQroksH+bpOI+Dgtch0BPIcxM7Zr4XbSaCxkOXOwM+VMvY1Ey29wJwNUZrZyRdRcNIQp8WVbS/rtO/0pPqjf2KPHmofWA1kRvGNLgh1q2kDU2MwGefz+XEA6A+56J2BorHh6IFtOFAWJDQ3zKvUd22AxusrdFGf9eBXTi/u4M0O2ctxRBg1d01m0PBWJc2i+ELOt9YfQ7OgFW9o1YtQ/PdHhriFqEQaFtLc4m6qFKHf6J27WBSMLuhnAHUsidD1auDGHEprBk3zygrloLS00rmRsn3p0sNIfKGUsukcroz/geTwI4INeeWpZN6k= mfrias@LAPTOP-MARIO
 # Explicit password configuration
 chpasswd:
-    list: |
+    list: 
         clouduser:ZGg8rQpu5bwJs7v
     expire: false
 
