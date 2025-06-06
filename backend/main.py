@@ -150,6 +150,11 @@ class LeaderboardEntry(BaseModel):
     score: int
     date: datetime
 
+class UserProfile(BaseModel):
+    name: str
+    name_last: str
+    email: str
+
 # end region
 
 
@@ -311,6 +316,31 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db), current_user: dict
         raise HTTPException(403, 'Invalid username or password')
 
     return [LeaderboardEntry(name=i[0].name, score=i[0].record, date=i[0].last_game) for i in res]
+
+@app.get("/users/me", response_model=UserProfile)
+async def read_users_me(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserProfile:
+    """
+    Returns minimum profile for the current user (name, name_last, email).
+    """
+    user_email = current_user.get("email")
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Invalid token or invalid email.")
+
+    query = Select(User).where(User.email == user_email)
+    result = await db.execute(query)
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    user_obj: User = row[0]
+    return UserProfile(
+        name=user_obj.name,
+        name_last=user_obj.name_last,
+        email=user_obj.email,
+    )
 
 # end region
 # region Video endpoints
