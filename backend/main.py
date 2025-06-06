@@ -712,6 +712,8 @@ async def video_rl_stream(websocket: WebSocket):
         return
 
     env = info["env_rl"]
+    frame_count = 0
+    aiAction = np.zeros(env.action_space.shape, dtype=np.float32)  # Default action
 
     # 2) Initial reset/unpack (Gymnasium vs. classic Gym)
     try:
@@ -727,17 +729,18 @@ async def video_rl_stream(websocket: WebSocket):
 
     try:
         while True:
-            try:
-                res = requests.post(f'{BACKEND_URL}/predict', verify=False, json={'obs': obs.tolist()})
-                if res.status_code != 200:
-                    raise HTTPException(500, "AI is not available")
+            if frame_count % 4 == 0:
+                try:
+                    res = requests.post(f'{BACKEND_URL}/predict', verify=False, json={'obs': obs.tolist()})
+                    if res.status_code != 200:
+                        raise HTTPException(500, "AI is not available")
 
-                data = res.json()['action']
+                    data = res.json()['action']
 
-                aiAction = np.array(data, dtype=np.float32)
-            except Exception as e:
-                logger.error(f"[video_rl] /predict call failed for session {session_id}: {e!r}")
-                break
+                    aiAction = np.array(data, dtype=np.float32)
+                except Exception as e:
+                    logger.error(f"[video_rl] /predict call failed for session {session_id}: {e!r}")
+                    break
 
             # 4) Step the RL environment
             try:
@@ -795,8 +798,9 @@ async def video_rl_stream(websocket: WebSocket):
                 logger.error(f"[video_rl] render/send error for session {session_id}: {e!r}")
                 break
 
-            # 9) Throttle loop (~60 FPS)
-            await asyncio.sleep(1 / 15)
+            frame_count += 1
+            # 9) Throttle loop (~30 FPS)
+            await asyncio.sleep(1 / 30)
 
     except WebSocketDisconnect:
         logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
