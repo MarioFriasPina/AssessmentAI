@@ -729,7 +729,7 @@ async def video_rl_stream(websocket: WebSocket):
 
     try:
         while True:
-            if frame_count % 4 == 0:
+            if frame_count % 2 == 0:
                 try:
                     res = requests.post(f'{BACKEND_URL}/predict', verify=False, json={'obs': obs.tolist()})
                     if res.status_code != 200:
