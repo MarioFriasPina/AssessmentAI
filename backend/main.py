@@ -384,7 +384,6 @@ async def cleanup(session_id: str):
     if not user_email:
         raise HTTPException(status_code=401, detail="Invalid token or invalid email.")
     else:
-        logger.info(f"User {user_email} ended a game")
         # Add current and new stats
         query = Select(User).where(User.email == user_email)
         result = await db.execute(query)
@@ -392,8 +391,6 @@ async def cleanup(session_id: str):
         curr_runs = user.runs
         curr_wins = user.wins
         curr_record = user.record
-
-        logger.info("Updating user stats...")
 
         # Update user stats
         update_query = update(User).where(User.email == user_email).values(
@@ -405,7 +402,6 @@ async def cleanup(session_id: str):
 
         # Only update the record if the current run is a new record
         if curr_record < info["best_reward"]:
-            logger.info(f"New record: {info['best_reward']}")
             update_query = update(User).where(User.email == user_email).values(
                 record = info["best_reward"],
                 last_game = info["last_game"]
@@ -439,10 +435,10 @@ async def offer(current_user: dict = Depends(get_current_user)):
 
     # Create Gym environments
     env_user = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
-    await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
+    #await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
 
     env_rl = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
-    await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
+    #await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
 
     # Create a per-session queue for user actions
     action_queue: asyncio.Queue = asyncio.Queue()
@@ -460,7 +456,8 @@ async def offer(current_user: dict = Depends(get_current_user)):
             "runs" : 0,
             "wins" : 0,
             "last_game" : datetime.now(),
-            "user_email" : current_user.get("email")
+            "user_email" : current_user.get("email"),
+            "need_reset" : False
         }
         session_queues[session_id] = action_queue
 
@@ -471,7 +468,7 @@ async def reset_both_envs(session_id:str):
         info = session_data.get(session_id)
         env_user = info["env_user"]
         env_rl = info["env_rl"]
-    obs_us, _ =await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
+    obs_us, _ = await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
     obs_rl, _ = await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
 
     async with session_data_lock:
@@ -530,7 +527,8 @@ async def video_user_stream(websocket: WebSocket):
             )
 
             # Update reward
-            info["reward_user"] += reward
+            async with session_data_lock:
+                session_data[session_id]["reward_user"] += reward
 
             if term or trunc:
                 async with session_data_lock:
@@ -539,7 +537,7 @@ async def video_user_stream(websocket: WebSocket):
             # Reset environment if needed
             async with session_data_lock:
                 if session_data[session_id].get("needs_reset"):
-                    await reset_both_envs(session_id)
+                    obs, _ = await reset_both_envs(session_id)
                     session_data[session_id]["needs_reset"] = False
 
             # Render (offloaded)
@@ -553,8 +551,6 @@ async def video_user_stream(websocket: WebSocket):
             # Send JPEG bytes
             await websocket.send_bytes(buffer.tobytes())
 
-
-
             # Throttle to ~30 FPS
             await asyncio.sleep(1 / 60)
 
@@ -564,6 +560,78 @@ async def video_user_stream(websocket: WebSocket):
         logger.error(f"[video_user] Exception for session {session_id}: {e}")
     finally:
         # Clean up this session (idempotent if others already triggered it)
+        await cleanup(session_id)
+
+@app.websocket("/video_rl")
+async def video_rl_stream(websocket: WebSocket):
+    await websocket.accept()
+    session_id = websocket.query_params.get("session_id")
+    if not session_id:
+        await websocket.close(code=4001)
+        return
+
+    # Atomically grab session info and queue (though queue not used here)
+    async with session_data_lock:
+        info = session_data.get(session_id)
+
+    if not info:
+        await websocket.close(code=4002)
+        return
+
+    env = info["env_rl"]
+    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+
+    try:
+        while True:
+            # call compute
+            res = requests.post(f'{BACKEND_URL}/predict',
+                                verify=False, json={'obs': obs.tolist()})
+
+            if res.status_code != 200:
+                raise HTTPException(500, "AI is not available")
+
+            data = res.json()['action']
+
+            aiAction = np.array(data, dtype=np.float32)
+            # Here you could call an external model; currently, we sample randomly
+
+            # Step environment (offloaded)
+            obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
+                executor, env.step, aiAction
+            )
+            async with session_data_lock:
+                session_data[session_id]["reward_rl"] += reward
+
+            if term or trunc:
+                async with session_data_lock:
+                    session_data[session_id]["needs_reset"] = True
+            
+            # Reset environment if needed
+            async with session_data_lock:
+                if session_data[session_id].get("needs_reset"):
+                    _, obs = await reset_both_envs(session_id)
+                    session_data[session_id]["needs_reset"] = False
+
+            # Render (offloaded)
+            frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
+
+            # Encode frame as JPEG (offloaded)
+            _, buffer = await asyncio.get_running_loop().run_in_executor(
+                executor, cv2.imencode, ".jpg", frame
+            )
+
+            # Send JPEG bytes
+            await websocket.send_bytes(buffer.tobytes())
+
+            # Throttle to ~60 FPS
+            await asyncio.sleep(1 / 60)
+
+    except WebSocketDisconnect:
+        logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
+    except Exception as e:
+        logger.error(f"[video_rl] Exception for session {session_id}: {e}")
+    finally:
+        # Clean up session (idempotent if another handler already did it)
         await cleanup(session_id)
 
 @app.get("/debug")
@@ -613,72 +681,6 @@ async def uwu():
     finally:
         # Clean up session (idempotent if another handler already did it)
         pass
-
-@app.websocket("/video_rl")
-async def video_rl_stream(websocket: WebSocket):
-    await websocket.accept()
-    session_id = websocket.query_params.get("session_id")
-    if not session_id:
-        await websocket.close(code=4001)
-        return
-
-    # Atomically grab session info and queue (though queue not used here)
-    async with session_data_lock:
-        info = session_data.get(session_id)
-        queue = session_queues.get(session_id)
-
-    if not info or not queue:
-        await websocket.close(code=4002)
-        return
-
-    env = info["env_rl"]
-    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
-
-    try:
-        while True:
-            # call compute
-            res = requests.post(f'{BACKEND_URL}/predict',
-                                verify=False, json={'obs': obs.tolist()})
-
-            if res.status_code != 200:
-                raise HTTPException(500, "AI is not available")
-
-            data = res.json()['action']
-
-            aiAction = np.array(data, dtype=np.float32)
-            # Here you could call an external model; currently, we sample randomly
-
-            # Step environment (offloaded)
-            obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
-                executor, env.step, aiAction
-            )
-            info["reward_rl"] += reward
-
-            if term or trunc:
-                async with session_data_lock:
-                    session_data[session_id]["needs_reset"] = True
-
-            # Render (offloaded)
-            frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
-
-            # Encode frame as JPEG (offloaded)
-            _, buffer = await asyncio.get_running_loop().run_in_executor(
-                executor, cv2.imencode, ".jpg", frame
-            )
-
-            # Send JPEG bytes
-            await websocket.send_bytes(buffer.tobytes())
-
-            # Throttle to ~60 FPS
-            await asyncio.sleep(1 / 60)
-
-    except WebSocketDisconnect:
-        logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
-    except Exception as e:
-        logger.error(f"[video_rl] Exception for session {session_id}: {e}")
-    finally:
-        # Clean up session (idempotent if another handler already did it)
-        await cleanup(session_id)
 
 @app.websocket("/ws")
 async def websocket_handler(websocket: WebSocket):
