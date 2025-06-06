@@ -68,42 +68,40 @@ function startActionWebSocket() {
 
 let a = [0.0, 0.0, 0.0];
 function onKeyDownSendAction(e) {
-    switch (e.key.toLowerCase()) {  
-        case "a": 
+    switch (e.key.tolowerCase()) {
+        case "a":
             a[0] = -1.0;
             break;
-        case "d": 
+        case "d":
             a[0] = +1.0;
             break;
-        case "w": 
+        case "w":
             a[1] = +1.0;
             break;
-        case "s": 
+        case "s":
             a[2] = +0.8;
             break;
         default:
-            return; 
+            return;
     }
     if (ws_action && ws_action.readyState === WebSocket.OPEN) {
         ws_action.send(JSON.stringify({ action: a }));
     }
 }
 function onKeyUpSendAction(e) {
-    switch (e.key.toLowerCase()) {  
-        case "a": 
-            a[0] = -1.0;
+    switch (e.key.tolowerCase()) {
+        case "a":
+        case "d":
+            a[0] = 0.0;
             break;
-        case "d": 
-            a[0] = +1.0;
+        case "w":
+            a[1] = 0.0;
             break;
-        case "w": 
-            a[1] = +1.0;
-            break;
-        case "s": 
-            a[2] = +0.8;
+        case "s":
+            a[2] = 0.0;
             break;
         default:
-            return; 
+            return;
     }
     if (ws_action && ws_action.readyState === WebSocket.OPEN) {
         ws_action.send(JSON.stringify({ action: a }));
