@@ -336,7 +336,7 @@ gulp.task("watch", function () {
     .on("change", browsersync.reload);
 });
 //  [ watch ] start
-const compile = gulp.parallel("browserSync", "watch");
+const compile = gulp.parallel("watch");
 //  [ Default task ] start
 gulp.task(
   "default",
