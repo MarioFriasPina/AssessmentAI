@@ -27,6 +27,7 @@ import bcrypt
 import jwt
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 import uvloop
+import httpx
 
 
 # region Conf
@@ -348,7 +349,7 @@ async def read_users_me(
 # region Video endpoints
 
 # ThreadPool executor for offloading gym.step(), env.reset(), env.render(), and cv2.imencode
-executor = ThreadPoolExecutor()
+executor = ThreadPoolExecutor(num_workers=10)
 
 # session_data holds per-session environments, queues, and last‐seen action
 session_data: Dict[str, Dict[str, Any]] = {}
@@ -359,6 +360,8 @@ session_queues: Dict[str, asyncio.Queue] = {}
 
 # Model inference server URL (not used in this snippet, but kept for reference)
 MODEL_URL = "https://192.24.0.9:443/predict"
+
+predict_client = httpx.AsyncClient(timeout=5.0, verify=False)
 
 
 async def cleanup(session_id: str):
@@ -727,16 +730,12 @@ async def video_rl_stream(websocket: WebSocket):
     try:
         while True:
             try:
-                # call predict
-                res = requests.post(f'{BACKEND_URL}/predict', verify=False, json={'obs': obs.tolist()})
-                if res.status_code != 200:
-                    raise HTTPException(500, "AI is not available")
-
-                data = res.json()['action']
-
+                resp = await predict_client.post(f"{BACKEND_URL}/predict", json={"obs": obs.tolist()})
+                resp.raise_for_status()
+                data = resp.json().get("action")
                 aiAction = np.array(data, dtype=np.float32)
             except Exception as e:
-                logger.error(f"[video_rl] /predict call failed for session {session_id}: {e!r}")
+                logger.error(f"[video_rl] async predict call failed: {e!r}")
                 break
 
             # 4) Step the RL environment
