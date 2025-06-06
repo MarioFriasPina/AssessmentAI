@@ -401,7 +401,7 @@ async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
         # Only update the record if the current run is a new record
         if curr_record < info["best_reward"]:
             update_query = update(User).where(User.email == user_email).values(
-                record = info["best_reward"]
+                record = info["best_reward"],
                 last_game = info["last_game"]
             )
             await db.execute(update_query)
@@ -453,7 +453,7 @@ async def offer(current_user: dict = Depends(get_current_user)):
             "best_reward": 0.0,
             "runs" : 0,
             "wins" : 0,
-            "last_game" : datetime.now(timezone.utc),
+            "last_game" : datetime.now(),
             "user_email" : current_user.get("email")
         }
         session_queues[session_id] = action_queue
@@ -476,7 +476,7 @@ async def reset_both_envs(session_id:str):
         # Compare the agent and user reward
         if info["reward_user"] > info["reward_rl"]:
             info["wins"] += 1
-            info["last_game"] = datetime.now(timezone.utc)
+            info["last_game"] = datetime.now()
         
         info["reward_user"] = 0.0
         info["reward_rl"] = 0.0
@@ -522,7 +522,9 @@ async def video_user_stream(websocket: WebSocket):
             obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
                 executor, env.step, np.array(last_action, dtype=np.float32)
             )
-            total_rew += reward
+
+            # Update reward
+            info["reward_user"] += reward
 
             if term or trunc:
                 async with session_data_lock:
