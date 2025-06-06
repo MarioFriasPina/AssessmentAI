@@ -348,7 +348,7 @@ async def read_users_me(
 # region Video endpoints
 
 # ThreadPool executor for offloading gym.step(), env.reset(), env.render(), and cv2.imencode
-executor = ThreadPoolExecutor()
+executor = ThreadPoolExecutor(max_workers=10)
 
 # session_data holds per-session environments, queues, and last‐seen action
 session_data: Dict[str, Dict[str, Any]] = {}
@@ -472,20 +472,20 @@ async def reset_both_envs(session_id: str):
     """
     logger.info(f"[reset_both_envs] Resetting both environments for session {session_id}")
     # 1) Grab session data under lock
-    async with session_data_lock:
-        info = session_data.get(session_id)
-        if info is None:
-            msg = f"[reset_both_envs] session {session_id} not found"
-            logger.warning(msg)
-            raise RuntimeError(msg)
+    #async with session_data_lock:
+    info = session_data.get(session_id)
+    if info is None:
+        msg = f"[reset_both_envs] session {session_id} not found"
+        logger.warning(msg)
+        raise RuntimeError(msg)
 
-        env_user = info.get("env_user")
-        env_rl   = info.get("env_rl")
+    env_user = info.get("env_user")
+    env_rl   = info.get("env_rl")
 
-        if env_user is None or env_rl is None:
-            msg = f"[reset_both_envs] session {session_id} missing one of the environments"
-            logger.error(msg)
-            raise RuntimeError(msg)
+    if env_user is None or env_rl is None:
+        msg = f"[reset_both_envs] session {session_id} missing one of the environments"
+        logger.error(msg)
+        raise RuntimeError(msg)
 
     # 2) Call env_user.reset() inside executor, catch exceptions
     try:
@@ -523,27 +523,27 @@ async def reset_both_envs(session_id: str):
         obs_rl = result_rl
 
     # 4) Update metrics under the lock, but only if session still exists
-    async with session_data_lock:
-        info = session_data.get(session_id)
-        if info is None:
-            msg = f"[reset_both_envs] session {session_id} vanished after resets"
-            logger.warning(msg)
-            raise RuntimeError(msg)
+    #async with session_data_lock:
+    info = session_data.get(session_id)
+    if info is None:
+        msg = f"[reset_both_envs] session {session_id} vanished after resets"
+        logger.warning(msg)
+        raise RuntimeError(msg)
 
-        # Update run count and best_reward
-        prev_user_reward = info.get("reward_user", 0.0)
-        prev_rl_reward   = info.get("reward_rl", 0.0)
-        prev_best        = info.get("best_reward", 0.0)
+    # Update run count and best_reward
+    prev_user_reward = info.get("reward_user", 0.0)
+    prev_rl_reward   = info.get("reward_rl", 0.0)
+    prev_best        = info.get("best_reward", 0.0)
 
-        info["runs"] += 1
-        info["best_reward"] = max(prev_best, prev_user_reward, prev_best)
+    info["runs"] += 1
+    info["best_reward"] = max(prev_best, prev_user_reward, prev_best)
 
-        if prev_user_reward > prev_rl_reward:
-            info["wins"] += 1
-            info["last_game"] = datetime.now()
+    if prev_user_reward > prev_rl_reward:
+        info["wins"] += 1
+        info["last_game"] = datetime.now()
 
-        info["reward_user"] = 0.0
-        info["reward_rl"]   = 0.0
+    info["reward_user"] = 0.0
+    info["reward_rl"]   = 0.0
 
     return obs_us, obs_rl
 
