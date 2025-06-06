@@ -373,9 +373,7 @@ async def cleanup(session_id: str):
 
     if not info:
         return
-    
-    db = await get_db()
-    
+        
     env_user = info["env_user"]
     env_rl = info["env_rl"]
 
@@ -384,29 +382,32 @@ async def cleanup(session_id: str):
     if not user_email:
         logger.warning(f"[cleanup] session {session_id} has no user_email, skipping DB update")
     else:
-        # Add current and new stats
-        query = Select(User).where(User.email == user_email)
-        result = await db.execute(query)
-        user = result.first()[0]
-        curr_runs = user.runs + info["runs"]
-        curr_wins = user.wins + info["wins"]
-        curr_record = user.record
+        async for db in get_db():
+            # Add current and new stats
+            query = Select(User).where(User.email == user_email)
+            result = await db.execute(query)
+            user = result.first()[0]
+            curr_runs = user.runs + info["runs"]
+            curr_wins = user.wins + info["wins"]
+            curr_record = user.record
 
-        # Update user stats
-        update_query = update(User).where(User.email == user_email).values(
-            wins = curr_wins,
-            runs = curr_runs
-        )
-        async with db.begin():
-            await db.execute(update_query)
-
-            # Only update the record if the current run is a new record
-            if curr_record < info["best_reward"]:
-                update_query = update(User).where(User.email == user_email).values(
-                    record = info["best_reward"],
-                    last_game = info["last_game"]
-                )
+            # Update user stats
+            update_query = update(User).where(User.email == user_email).values(
+                wins = curr_wins,
+                runs = curr_runs
+            )
+            async with db.begin():
                 await db.execute(update_query)
+
+                # Only update the record if the current run is a new record
+                if curr_record < info["best_reward"]:
+                    update_query = update(User).where(User.email == user_email).values(
+                        record = info["best_reward"],
+                        last_game = info["last_game"]
+                    )
+                    await db.execute(update_query)
+
+            break
 
     # Close gym environments (synchronously is okay here, but could be offloaded if desired)
     await asyncio.gather(
