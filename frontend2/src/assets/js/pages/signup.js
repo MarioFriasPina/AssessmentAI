@@ -6,33 +6,37 @@ const REST_URL = `https://${backendHost}/create`;
 
 // Wait for the entire DOM to be loaded before running any code
 document.addEventListener("DOMContentLoaded", () => {
-    // -------------- 
-    // get references to the login form the button sign in
-    // --------------
+    // Get reference to the sign-up button
     const signUp = document.getElementById("signUpButton");
 
-    // add a click event listener to the login button
+    // Add a click event listener
     signUp.addEventListener("click", async function () {
-        //Get the info the values from the email and password fields
-        const name = document.getElementById("name").value;
-        const last_name = document.getElementById("last_name").value;
-        const email = document.getElementById("email").value;
-        const password = document.getElementById("password").value;
+        // Get the values from input fields
+        const name = document.getElementById("name").value.trim();
+        const last_name = document.getElementById("last_name").value.trim();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value.trim();
 
+        // Validate fields are not empty
+        if (!name || !last_name || !email || !password) {
+            showErrorPopup("Please fill in all fields.");
+            return;
+        }
 
-        // Prepare form data as URL
+        else if (password.length < 8) {
+            showErrorPopup("Password must be at least 8 characters long.");
+            return;
+        }
+
+        // Prepare form data as URL-encoded
         const formData = new URLSearchParams();
         formData.append("name", name);
         formData.append("name_last", last_name);
         formData.append("email", email);
         formData.append("password", password);
 
-        window.location.href = '/login.html';
-
-        // Send a POST request to the backend to get the token
-        
-        try{
-            // Send a post request to the FastAPI backend
+        try {
+            // Send a POST request to the FastAPI backend
             const response = await fetch(REST_URL, {
                 method: "POST",
                 headers: {
@@ -41,34 +45,45 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: formData,
             });
 
-            //If the response is not ok, throw an error and create an alert
+            if (response.ok) {
+                const result = await response.json();
 
-                  if (response = "success") {
-                    // redirect the user to the login page
-                    window.location.href = 'login.html';
+                // Optionally check the returned message or status
+                if (result.status === "success" || result.message === "User created") {
+                    showSuccessPopup("User created successfully. Redirecting...");
+                    setTimeout(() => {
+                        window.location.href = '../login.html';
+                    }, 400);
                 } else {
-                    // If login fails (e.g., 403), show the error popup
-                    showErrorPopup();
+                    showErrorPopup("Error creating user. Please try again.");
                 }
-                } catch (error) {
-                // In case of a network error or other unexpected error, also show the popup
-                showErrorPopup();
-                }
-            });
-            });
+            } else {
+                showErrorPopup("Registration failed. Please check your data.");
+            }
+        } catch (error) {
+            showErrorPopup("Unable to connect to the server.");
+        }
+    });
+});
 
-        // Function to display an error popup for 5 seconds
-        function showErrorPopup() {
-        // Get the popup element by its ID
-        const popup = document.getElementById('errorPopup');
-        // Make it visible
-        popup.style.display = 'block';
-        // After 5 seconds, hide it again
-        setTimeout(() => {
-            popup.style.display = 'none';
-        }, 5000);
-        
-    }
+// Function to display an error popup for 5 seconds
+function showErrorPopup(message = "An error occurred.") {
+    const popup = document.getElementById('errorPopup');
+    popup.textContent = message;
+    popup.style.display = 'block';
+    popup.style.color = 'red';
+    setTimeout(() => {
+        popup.style.display = 'none';
+    }, 400);
+}
 
-
-
+// Function to display a success popup in green
+function showSuccessPopup(message = "Success.") {
+    const popup = document.getElementById('errorPopup');
+    popup.textContent = message;
+    popup.style.display = 'block';
+    popup.style.color = 'green';
+    setTimeout(() => {
+        popup.style.display = 'none';
+    }, 400);
+}
