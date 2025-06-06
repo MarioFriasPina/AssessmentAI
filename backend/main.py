@@ -727,11 +727,13 @@ async def video_rl_stream(websocket: WebSocket):
         while True:
             try:
                 # call predict
-                res = requests.post(f"{BACKEND_URL}/predict", verify=False, json={"obs": obs[0].tolist()})
+                res = requests.post(f'{BACKEND_URL}/predict', verify=False, json={'obs': obs.tolist()})
                 if res.status_code != 200:
                     raise HTTPException(500, "AI is not available")
-                data = res.json().get("action")
-                ai_action = np.array(data, dtype=np.float32)
+
+                data = res.json()['action']
+
+                aiAction = np.array(data, dtype=np.float32)
             except Exception as e:
                 logger.error(f"[video_rl] /predict call failed for session {session_id}: {e!r}")
                 break
@@ -739,7 +741,7 @@ async def video_rl_stream(websocket: WebSocket):
             # 4) Step the RL environment
             try:
                 obs, reward, term, trunc, _ = await asyncio.get_running_loop().run_in_executor(
-                    executor, env.step, ai_action
+                    executor, env.step, aiAction
                 )
             except Exception as e:
                 logger.error(f"[video_rl] env.step() raised for session {session_id}: {e!r}")
