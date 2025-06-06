@@ -382,43 +382,37 @@ async def cleanup(session_id: str):
     user_email = info.get("user_email")
 
     if not user_email:
-        raise HTTPException(status_code=401, detail="Invalid token or invalid email.")
+        logger.warning(f"[cleanup] session {session_id} has no user_email, skipping DB update")
     else:
         # Add current and new stats
         query = Select(User).where(User.email == user_email)
         result = await db.execute(query)
         user = result.first()[0]
-        curr_runs = user.runs
-        curr_wins = user.wins
+        curr_runs = user.runs + info["runs"]
+        curr_wins = user.wins + info["wins"]
         curr_record = user.record
 
         # Update user stats
         update_query = update(User).where(User.email == user_email).values(
-            wins = curr_wins + 1,
-            runs = curr_runs + 1
+            wins = curr_wins,
+            runs = curr_runs
         )
-        await db.execute(update_query)
-        await db.commit()
-
-        # Only update the record if the current run is a new record
-        if curr_record < info["best_reward"]:
-            update_query = update(User).where(User.email == user_email).values(
-                record = info["best_reward"],
-                last_game = info["last_game"]
-            )
+        async with db.begin():
             await db.execute(update_query)
-            await db.commit()
+
+            # Only update the record if the current run is a new record
+            if curr_record < info["best_reward"]:
+                update_query = update(User).where(User.email == user_email).values(
+                    record = info["best_reward"],
+                    last_game = info["last_game"]
+                )
+                await db.execute(update_query)
 
     # Close gym environments (synchronously is okay here, but could be offloaded if desired)
-    try:
-        env_user.close()
-    except Exception:
-        pass
-
-    try:
-        env_rl.close()
-    except Exception:
-        pass
+    await asyncio.gather(
+        asyncio.get_running_loop().run_in_executor(executor, env_user.close),
+        asyncio.get_running_loop().run_in_executor(executor, env_rl.close),
+    )
 
     logger.info(f"[cleanup] Cleaned up session {session_id}")
 
@@ -593,17 +587,37 @@ async def video_user_stream(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info(f"[video_user] WebSocket disconnected for session {session_id}")
+        # Mark that the RL side is gone, and do NOT call cleanup here.
         async with session_data_lock:
-            session_data[session_id]["live_video_user"] = False
-            # Only actually remove if RL is also gone:
-            if not session_data[session_id]["live_video_rl"]:
-                session_data.pop(session_id)
-                session_queues.pop(session_id)
+            if session_id in session_data:
+                session_data[session_id]["live_video_rl"] = False
+
     except Exception as e:
         logger.error(f"[video_user] Exception for session {session_id}: {e}")
+
     finally:
-        # Clean up this session (idempotent if others already triggered it)
-        await cleanup(session_id)
+        # Only call cleanup once, and only if neither side is still live
+        async with session_data_lock:
+            info = session_data.get(session_id)
+            if info:
+                # Mark RL side gone here as well, in case an Exception (not a WebSocketDisconnect) occurred
+                info["live_video_user"] = False
+
+                # If the “user” side is also gone, do a single cleanup()
+                if not info.get("live_video_rl", False):
+                    # Pop and tear down
+                    # We release the lock before calling cleanup(), because cleanup()
+                    # itself acquires `session_data_lock` internally.
+                    pass
+                else:
+                    # If the user side is still live, skip cleanup()
+                    info = None
+            # If info is None (either session was already popped, or user is still live),
+            # we do nothing here.
+
+        # Now, outside the lock, call cleanup if both sides really are gone
+        if info is not None:
+            await cleanup(session_id)
 
 @app.websocket("/video_rl")
 async def video_rl_stream(websocket: WebSocket):
@@ -676,17 +690,37 @@ async def video_rl_stream(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
+        # Mark that the RL side is gone, and do NOT call cleanup here.
         async with session_data_lock:
-            session_data[session_id]["live_video_rl"] = False
-            # Only actually remove if user is also gone:
-            if not session_data[session_id]["live_video_user"]:
-                session_data.pop(session_id)
-                session_queues.pop(session_id)
+            if session_id in session_data:
+                session_data[session_id]["live_video_rl"] = False
+
     except Exception as e:
         logger.error(f"[video_rl] Exception for session {session_id}: {e}")
+
     finally:
-        # Clean up session (idempotent if another handler already did it)
-        await cleanup(session_id)
+        # Only call cleanup once, and only if neither side is still live
+        async with session_data_lock:
+            info = session_data.get(session_id)
+            if info:
+                # Mark RL side gone here as well, in case an Exception (not a WebSocketDisconnect) occurred
+                info["live_video_rl"] = False
+
+                # If the “user” side is also gone, do a single cleanup()
+                if not info.get("live_video_user", False):
+                    # Pop and tear down
+                    # We release the lock before calling cleanup(), because cleanup()
+                    # itself acquires `session_data_lock` internally.
+                    pass
+                else:
+                    # If the user side is still live, skip cleanup()
+                    info = None
+            # If info is None (either session was already popped, or user is still live),
+            # we do nothing here.
+
+        # Now, outside the lock, call cleanup if both sides really are gone
+        if info is not None:
+            await cleanup(session_id)
 
 @app.get("/debug")
 async def uwu():
