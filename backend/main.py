@@ -470,6 +470,7 @@ async def reset_both_envs(session_id: str):
     raises RuntimeError. If any other error happens during reset(), logs
     it and re-raises.
     """
+    logger.info(f"[reset_both_envs] Resetting both environments for session {session_id}")
     # 1) Grab session data under lock
     async with session_data_lock:
         info = session_data.get(session_id)
