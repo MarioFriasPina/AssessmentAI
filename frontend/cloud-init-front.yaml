@@ -141,5 +141,9 @@ runcmd:
     # ZGg8rQpu5bwJs7v
     # sudo update-ca-certificates
     # Cambiar la IP en main.js a la del frontend
+    #sudo rm -rf /var/www/html/*
+    #sudo cp -r /home/clouduser/ig-drasil-front/frontend2/dist/* /var/www/html/
+
+    
 
 final_message: "Frontend server is up and running!"
