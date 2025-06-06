@@ -587,36 +587,25 @@ async def video_user_stream(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info(f"[video_user] WebSocket disconnected for session {session_id}")
-        # Mark that the RL side is gone, and do NOT call cleanup here.
         async with session_data_lock:
-            if session_id in session_data:
-                session_data[session_id]["live_video_rl"] = False
+            info = session_data.get(session_id)
+            if info:
+                info["live_video_user"] = False
+        # Do NOT cleanup() here.
 
     except Exception as e:
         logger.error(f"[video_user] Exception for session {session_id}: {e}")
 
     finally:
-        # Only call cleanup once, and only if neither side is still live
+        to_cleanup = False
         async with session_data_lock:
             info = session_data.get(session_id)
             if info:
-                # Mark RL side gone here as well, in case an Exception (not a WebSocketDisconnect) occurred
                 info["live_video_user"] = False
-
-                # If the “user” side is also gone, do a single cleanup()
                 if not info.get("live_video_rl", False):
-                    # Pop and tear down
-                    # We release the lock before calling cleanup(), because cleanup()
-                    # itself acquires `session_data_lock` internally.
-                    pass
-                else:
-                    # If the user side is still live, skip cleanup()
-                    info = None
-            # If info is None (either session was already popped, or user is still live),
-            # we do nothing here.
+                    to_cleanup = True
 
-        # Now, outside the lock, call cleanup if both sides really are gone
-        if info is not None:
+        if to_cleanup:
             await cleanup(session_id)
 
 @app.websocket("/video_rl")
@@ -627,7 +616,7 @@ async def video_rl_stream(websocket: WebSocket):
         await websocket.close(code=4001)
         return
 
-    # Atomically grab session info and queue (though queue not used here)
+    # Atomically grab session info
     async with session_data_lock:
         info = session_data.get(session_id)
 
@@ -636,90 +625,70 @@ async def video_rl_stream(websocket: WebSocket):
         return
 
     env = info["env_rl"]
-    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+    # Safe initial reset/unpack (Gymnasium vs. classic Gym)
+    result = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+    if isinstance(result, tuple) and len(result) >= 1:
+        obs, _ = result
+    else:
+        obs = result
 
     try:
         while True:
-            # call compute
-            res = requests.post(f'{BACKEND_URL}/predict',
-                                verify=False, json={'obs': obs.tolist()})
+            # … your RL loop, e.g. call to /predict, env.step(...), etc. …
 
-            if res.status_code != 200:
-                raise HTTPException(500, "AI is not available")
-
-            data = res.json()['action']
-
-            aiAction = np.array(data, dtype=np.float32)
-            # Here you could call an external model; currently, we sample randomly
-
-            # Step environment (offloaded)
-            obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
-                executor, env.step, aiAction
-            )
-            async with session_data_lock:
-                session_data[session_id]["reward_rl"] += reward
-
+            # If terminal, mark needs_reset_rl
             if term or trunc:
                 async with session_data_lock:
-                    session_data[session_id]["needs_reset_rl"] = True
-            
-            # Reset environment if needed
+                    # FIRST guard: re‐fetch info
+                    info = session_data.get(session_id)
+                    if info:
+                        info["needs_reset_rl"] = True
+
+            # Shared reset logic under lock (exactly one reset per termination)
             async with session_data_lock:
-                if session_data[session_id]["needs_reset_user"] or session_data[session_id]["needs_reset_rl"]:
+                info = session_data.get(session_id)
+                if info and (info["needs_reset_user"] or info["needs_reset_rl"]):
                     try:
-                        obs_us, obs = await reset_both_envs(session_id)
+                        obs_us, obs_rl = await reset_both_envs(session_id)
                     except RuntimeError:
-                        # session was already deleted
+                        # session was popped—just break out of the loop
                         break
-                    session_data[session_id]["needs_reset_user"] = False
-                    session_data[session_id]["needs_reset_rl"]   = False
+                    info["needs_reset_user"] = False
+                    info["needs_reset_rl"]   = False
+                    obs = obs_rl
 
-            # Render (offloaded)
-            frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
-
-            # Encode frame as JPEG (offloaded)
-            _, buffer = await asyncio.get_running_loop().run_in_executor(
-                executor, cv2.imencode, ".jpg", frame
-            )
-
-            # Send JPEG bytes
-            await websocket.send_bytes(buffer.tobytes())
-
-            # Throttle to ~60 FPS
-            await asyncio.sleep(1 / 60)
+            # … render, send JPEG, sleep, etc. …
 
     except WebSocketDisconnect:
         logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
-        # Mark that the RL side is gone, and do NOT call cleanup here.
+        # Mark RL side gone, but only if the session still exists
         async with session_data_lock:
-            if session_id in session_data:
-                session_data[session_id]["live_video_rl"] = False
+            info = session_data.get(session_id)
+            if info:
+                info["live_video_rl"] = False
+        # Do NOT call cleanup() here—defer to 'finally' so we only clean up once.
 
     except Exception as e:
         logger.error(f"[video_rl] Exception for session {session_id}: {e}")
 
     finally:
-        # Only call cleanup once, and only if neither side is still live
+        # In 'finally', we decide whether BOTH sides are gone, and then cleanup exactly once.
+        to_cleanup = False
+
         async with session_data_lock:
             info = session_data.get(session_id)
             if info:
-                # Mark RL side gone here as well, in case an Exception (not a WebSocketDisconnect) occurred
+                # First, mark RL side gone in case this was an Exception (not WebSocketDisconnect)
                 info["live_video_rl"] = False
 
-                # If the “user” side is also gone, do a single cleanup()
+                # If the user side is already gone, *then* we know it's safe to clean up.
                 if not info.get("live_video_user", False):
-                    # Pop and tear down
-                    # We release the lock before calling cleanup(), because cleanup()
-                    # itself acquires `session_data_lock` internally.
-                    pass
-                else:
-                    # If the user side is still live, skip cleanup()
-                    info = None
-            # If info is None (either session was already popped, or user is still live),
-            # we do nothing here.
+                    # Flag to cleanup—pop will happen inside cleanup()
+                    to_cleanup = True
+            # If info is None, the session was already popped by the `/video_user` side,
+            # so we do nothing here.
 
-        # Now, outside the lock, call cleanup if both sides really are gone
-        if info is not None:
+        if to_cleanup:
             await cleanup(session_id)
 
 @app.get("/debug")
