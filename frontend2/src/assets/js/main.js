@@ -68,54 +68,58 @@ function startActionWebSocket() {
 
 let a = [0.0, 0.0, 0.0];
 function onKeyDownSendAction(e) {
-    switch (e.key) {
-        case "ArrowLeft":
+    switch (e.key.toLowerCase()) {  
+        case "a": 
             a[0] = -1.0;
             break;
-        case "ArrowRight":
+        case "d": 
             a[0] = +1.0;
             break;
-        case "ArrowUp":
+        case "w": 
             a[1] = +1.0;
             break;
-        case "ArrowDown":
+        case "s": 
             a[2] = +0.8;
             break;
         default:
-            return;
+            return; 
     }
     if (ws_action && ws_action.readyState === WebSocket.OPEN) {
         ws_action.send(JSON.stringify({ action: a }));
     }
 }
 function onKeyUpSendAction(e) {
-    switch (e.key) {
-        case "ArrowLeft":
-        case "ArrowRight":
-            a[0] = 0.0;
+    switch (e.key.toLowerCase()) {  
+        case "a": 
+            a[0] = -1.0;
             break;
-        case "ArrowUp":
-            a[1] = 0.0;
+        case "d": 
+            a[0] = +1.0;
             break;
-        case "ArrowDown":
-            a[2] = 0.0;
+        case "w": 
+            a[1] = +1.0;
+            break;
+        case "s": 
+            a[2] = +0.8;
             break;
         default:
-            return;
+            return; 
     }
     if (ws_action && ws_action.readyState === WebSocket.OPEN) {
         ws_action.send(JSON.stringify({ action: a }));
     }
 }
 
-async function iniciarSesion() {
+window.addEventListener("load", async () => {
     // Always show loading overlays at start
     loading_user.style.display = "flex";
     loading_rl.style.display = "flex";
     await startSession();
     startVideoStreams();
     startActionWebSocket();
-}
+});
 
-// Escucha el clic del botón
-document.getElementById("startBtn").addEventListener("click", iniciarSesion);
+//refesh the page whent the user clicks on the refresh button
+document.getElementById("startBtn").addEventListener("click", () => {
+    location.reload();
+});
