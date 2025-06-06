@@ -1,4 +1,4 @@
-const backendHost = "172.24.0.223:443/api"; // your backend address (with port)
+const backendHost = "10.49.12.47:9999/api"; // your backend address (with port)
 const REST_URL = `https://${backendHost}/leaderboard`;
 const REST_URL2 = `https://${backendHost}/data`;
 
