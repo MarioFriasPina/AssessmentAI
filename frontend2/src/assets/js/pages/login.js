@@ -47,6 +47,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 // Save the access token in localStorage for future requests
                 localStorage.setItem('token', data.access_token);
 
+                // Redirect the user to the dashboard page
+                window.location.href = 'dashboard/index.html';
+
                 data = parseJwt(data.access_token);
                 user = data.user;
 
@@ -54,8 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                
 
-                // Redirect the user to the dashboard page
-                window.location.href = 'dashboard/index.html';
+                
             } else {
                 // If login fails (e.g., 403), show the error popup
                 showErrorPopup("Incorrect credentials. Please try again.");
@@ -80,6 +82,8 @@ function showErrorPopup(message = "Invalid email or password..") {
 }
 
 function parseJwt (token) {
+    // Decode the JWT token and return the payload as a JSON object
+    console.log("Parsing JWT token:");
     var base64Url = token.split('.')[1];
     var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
