@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect, Request, H
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-from sqlalchemy import create_engine, MetaData, Column, Integer, String, Select, DateTime, asc, desc
+from sqlalchemy import create_engine, MetaData, Column, Integer, String, Select, DateTime, asc, desc, update
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from pydantic import BaseModel
@@ -361,7 +361,7 @@ session_queues: Dict[str, asyncio.Queue] = {}
 MODEL_URL = "https://192.24.0.9:443/predict"
 
 
-async def cleanup(session_id: str):
+async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
     """
     Tear down everything associated with a given session_id:
       - Close gym environments
@@ -373,9 +373,39 @@ async def cleanup(session_id: str):
 
     if not info:
         return
-
+    
     env_user = info["env_user"]
     env_rl = info["env_rl"]
+
+    user_email = info.get("user_email")
+
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Invalid token or invalid email.")
+    else:
+        # Add current and new stats
+        query = Select(User).where(User.email == user_email)
+        result = await db.execute(query)
+        user = result.first()[0]
+        curr_runs = user.runs
+        curr_wins = user.wins
+        curr_record = user.record
+
+        # Update user stats
+        update_query = update(User).where(User.email == user_email).values(
+            wins = curr_wins + 1,
+            runs = curr_runs + 1
+        )
+        await db.execute(update_query)
+        await db.commit()
+
+        # Only update the record if the current run is a new record
+        if curr_record < info["best_reward"]:
+            update_query = update(User).where(User.email == user_email).values(
+                record = info["best_reward"]
+                last_game = info["last_game"]
+            )
+            await db.execute(update_query)
+            await db.commit()
 
     # Close gym environments (synchronously is okay here, but could be offloaded if desired)
     try:
@@ -392,7 +422,7 @@ async def cleanup(session_id: str):
 
 
 @app.post("/offer")
-async def offer(request: Request, ):
+async def offer(current_user: dict = Depends(get_current_user)):
     """
     Create a new session for video streaming and user actions.
     Returns a session_id for the client to use in WebSocket connections.
@@ -417,12 +447,41 @@ async def offer(request: Request, ):
             "env_user": env_user,
             "env_rl": env_rl,
             "queue": action_queue,
-            "last_user_action": [0.0, 0.0, 0.0],
+            "last_user_action": [0.0, 0.0, 0.0], # The action last seen by the user
+            "reward_user": 0.0,
+            "reward_rl": 0.0,
+            "best_reward": 0.0,
+            "runs" : 0,
+            "wins" : 0,
+            "last_game" : datetime.now(timezone.utc),
+            "user_email" : current_user.get("email")
         }
         session_queues[session_id] = action_queue
 
     return {"session_id": session_id}
 
+async def reset_both_envs(session_id:str):
+    async with session_data_lock:
+        info = session_data.get(session_id)
+        env_user = info["env_user"]
+        env_rl = info["env_rl"]
+    obs_us, _ =await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
+    obs_rl, _ = await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
+
+    async with session_data_lock:
+        info["runs"] += 1
+        # Get the best reward obtained
+        info["best_reward"] = max(info["reward_user"], info["best_reward"])
+
+        # Compare the agent and user reward
+        if info["reward_user"] > info["reward_rl"]:
+            info["wins"] += 1
+            info["last_game"] = datetime.now(timezone.utc)
+        
+        info["reward_user"] = 0.0
+        info["reward_rl"] = 0.0
+    
+    return obs_us, obs_rl
 
 @app.websocket("/video_user")
 async def video_user_stream(websocket: WebSocket):
@@ -446,6 +505,7 @@ async def video_user_stream(websocket: WebSocket):
 
     # Initialize environment (already reset in /offer, but safe to reset again)
     obs = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+    info["runs"] += 1
 
     try:
         while True:
@@ -462,8 +522,17 @@ async def video_user_stream(websocket: WebSocket):
             obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
                 executor, env.step, np.array(last_action, dtype=np.float32)
             )
+            total_rew += reward
+
             if term or trunc:
-                obs = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+                async with session_data_lock:
+                    session_data[session_id]["needs_reset"] = True
+            
+            # Reset environment if needed
+            async with session_data_lock:
+                if session_data[session_id].get("needs_reset"):
+                    await reset_both_envs(session_id)
+                    session_data[session_id]["needs_reset"] = False
 
             # Render (offloaded)
             frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
@@ -475,6 +544,8 @@ async def video_user_stream(websocket: WebSocket):
 
             # Send JPEG bytes
             await websocket.send_bytes(buffer.tobytes())
+
+
 
             # Throttle to ~30 FPS
             await asyncio.sleep(1 / 60)
@@ -491,7 +562,7 @@ async def video_user_stream(websocket: WebSocket):
 async def uwu():
     env = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
     await asyncio.get_running_loop().run_in_executor(executor, env.reset)
-    obs: tuple[np.ndarray, dict] = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
 
     try:
 
@@ -512,7 +583,7 @@ async def uwu():
                 executor, env.step, aiAction
             )
             if term or trunc:
-                obs = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+                obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
 
             # Render (offloaded)
             frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
@@ -553,13 +624,13 @@ async def video_rl_stream(websocket: WebSocket):
         return
 
     env = info["env_rl"]
-    obs = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
 
     try:
         while True:
             # call compute
             res = requests.post(f'{BACKEND_URL}/predict',
-                                verify=False, json={'obs': obs[0].tolist()})
+                                verify=False, json={'obs': obs.tolist()})
 
             if res.status_code != 200:
                 raise HTTPException(500, "AI is not available")
@@ -573,8 +644,11 @@ async def video_rl_stream(websocket: WebSocket):
             obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
                 executor, env.step, aiAction
             )
+            info["reward_rl"] += reward
+
             if term or trunc:
-                obs = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+                async with session_data_lock:
+                    session_data[session_id]["needs_reset"] = True
 
             # Render (offloaded)
             frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
@@ -597,7 +671,6 @@ async def video_rl_stream(websocket: WebSocket):
     finally:
         # Clean up session (idempotent if another handler already did it)
         await cleanup(session_id)
-
 
 @app.websocket("/ws")
 async def websocket_handler(websocket: WebSocket):
@@ -642,7 +715,6 @@ async def websocket_handler(websocket: WebSocket):
     finally:
         # Clean up this session (idempotent if others already triggered it)
         await cleanup(session_id)
-
 
 @app.post("/shutdown_all")
 async def shutdown_all():
