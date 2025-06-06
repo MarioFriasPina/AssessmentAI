@@ -108,11 +108,14 @@ function onKeyUpSendAction(e) {
     }
 }
 
-window.addEventListener("load", async () => {
+async function iniciarSesion() {
     // Always show loading overlays at start
     loading_user.style.display = "flex";
     loading_rl.style.display = "flex";
     await startSession();
     startVideoStreams();
     startActionWebSocket();
-});
+}
+
+// Escucha el clic del botón
+document.getElementById("startBtn").addEventListener("click", iniciarSesion);

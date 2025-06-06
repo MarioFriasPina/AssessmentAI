@@ -49,6 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // Redirect the user to the dashboard page
                 window.location.href = 'dashboard/index.html';
+                
 
                 data = parseJwt(data.access_token);
                 user = data.user;

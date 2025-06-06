@@ -68,8 +68,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const stats = await response.json();
 
     // Fallbacks por si viene null o undefined
-    const bestTime = stats.record ? `${stats.record} minutes` : "0 minutes";
-    const avgTime = stats.total ? `${Math.round(stats.record / stats.total)} minutes` : "0 minutes";
+    const bestTime = stats.record ? `${stats.record} Points` : "0 Points";
+    const avgTime = stats.total ? `${Math.round(stats.record / stats.total)} Points` : "0 Points";
     const wins = stats.win ?? 0;
     const losses = stats.loss ?? 0;
 

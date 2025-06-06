@@ -301,12 +301,18 @@ $value in $preset-colors {
     color: #d6d2d2;
   }
   .loading-overlay {
-    color: #7ec1ff !important;
+    color: #dfe1e3 !important;
   }
 
   h1,h2,h3,h4,h5,h6,p,td,
   .text-primary {
     color: lighten($primary, 20%) !important;
+  }
+
+  .btn, .btn-outline-dark{
+
+    color: lighten($primary, 20%) !important;
+    border-color: lighten($primary, 20%) !important;
   }
 
   a {
