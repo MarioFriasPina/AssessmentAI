@@ -18,6 +18,7 @@ import gymnasium as gym
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import requests
 from sqlalchemy import create_engine, MetaData, Column, Integer, String, Select, DateTime, asc, desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -31,6 +32,7 @@ import uvloop
 # region Conf
 
 DATABASE_URL = "postgresql+asyncpg://clouduser:Mnb%40sdpoi87@172.24.0.22:5432/igdrasil"  
+BACKEND_URL = "https://172.24.0.9"
 
 # Create the SQLAlchemy engine
 engine_base = create_async_engine(DATABASE_URL, echo=True)
@@ -337,9 +339,9 @@ async def read_users_me(
 
     user_obj: User = row[0]
     return UserProfile(
-        name=user_obj.name,
-        name_last=user_obj.name_last,
-        email=user_obj.email,
+        name=user_obj.name, # type: ignore
+        name_last=user_obj.name_last, # type: ignore
+        email=user_obj.email, # type: ignore
     )
 
 # end region
@@ -390,7 +392,7 @@ async def cleanup(session_id: str):
 
 
 @app.post("/offer")
-async def offer(request: Request):
+async def offer(request: Request, ):
     """
     Create a new session for video streaming and user actions.
     Returns a session_id for the client to use in WebSocket connections.
@@ -450,8 +452,7 @@ async def video_user_stream(websocket: WebSocket):
             # Drain all pending actions to get the most recent one
             while True:
                 try:
-                    next_action = queue.get_nowait()
-                    last_action = next_action
+                    last_action = queue.get_nowait()
                     # Update stored last action
                     info["last_user_action"] = last_action
                 except asyncio.QueueEmpty:
@@ -486,6 +487,53 @@ async def video_user_stream(websocket: WebSocket):
         # Clean up this session (idempotent if others already triggered it)
         await cleanup(session_id)
 
+@app.get("/debug")
+async def uwu():
+    env = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
+    await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+    obs: tuple[np.ndarray, dict] = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+
+    try:
+
+        while True:
+            # call compute
+            res = requests.post(f'{BACKEND_URL}/predict', verify=False, json={'obs': obs[0].tolist()})
+
+            if res.status_code != 200:
+                raise HTTPException(500, "AI is not available")
+
+            data = res.json()['action']
+
+            aiAction = np.array(data, dtype=np.float32)
+            # Here you could call an external model; currently, we sample randomly
+
+            # Step environment (offloaded)
+            obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
+                executor, env.step, aiAction
+            )
+            if term or trunc:
+                obs = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+
+            # Render (offloaded)
+            frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
+
+            # Encode frame as JPEG (offloaded)
+            _, buffer = await asyncio.get_running_loop().run_in_executor(
+                executor, cv2.imencode, ".jpg", frame
+            )
+
+
+            # Throttle to ~60 FPS
+            await asyncio.sleep(1 / 60)
+
+    except WebSocketDisconnect:
+        logger.info(
+            f"[video_rl] WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"[video_rl] Exception for session {e}")
+    finally:
+        # Clean up session (idempotent if another handler already did it)
+        pass
 
 @app.websocket("/video_rl")
 async def video_rl_stream(websocket: WebSocket):
@@ -509,14 +557,21 @@ async def video_rl_stream(websocket: WebSocket):
 
     try:
         while True:
+            # call compute
+            res = requests.post(f'{BACKEND_URL}/predict',
+                                verify=False, json={'obs': obs[0].tolist()})
+
+            if res.status_code != 200:
+                raise HTTPException(500, "AI is not available")
+
+            data = res.json()['action']
+
+            aiAction = np.array(data, dtype=np.float32)
             # Here you could call an external model; currently, we sample randomly
-            action = await asyncio.get_running_loop().run_in_executor(
-                executor, env.action_space.sample
-            )
 
             # Step environment (offloaded)
             obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
-                executor, env.step, action
+                executor, env.step, aiAction
             )
             if term or trunc:
                 obs = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
