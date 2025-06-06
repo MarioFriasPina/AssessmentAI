@@ -396,17 +396,17 @@ async def cleanup(session_id: str):
                 wins = curr_wins,
                 runs = curr_runs
             )
-            async with db.begin():
+            await db.execute(update_query)
+
+            # Only update the record if the current run is a new record
+            if curr_record < info["best_reward"]:
+                update_query = update(User).where(User.email == user_email).values(
+                    record = info["best_reward"],
+                    last_game = info["last_game"]
+                )
                 await db.execute(update_query)
 
-                # Only update the record if the current run is a new record
-                if curr_record < info["best_reward"]:
-                    update_query = update(User).where(User.email == user_email).values(
-                        record = info["best_reward"],
-                        last_game = info["last_game"]
-                    )
-                    await db.execute(update_query)
-
+            await db.commit()
             break
 
     # Close gym environments (synchronously is okay here, but could be offloaded if desired)
