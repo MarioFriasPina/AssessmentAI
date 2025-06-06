@@ -55,7 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const result = await response.json();
                 showSuccessPopup("Registration successful! You can now log in.");
                 setTimeout(() => {
-                    window.location.href = "login.html"; // Redirect to login page after success
+                    window.location.href = "../login.html"; // Redirect to login page after success
                 }, 1000);
             } else {
                 showErrorPopup("Registration failed. Please check your data.");
