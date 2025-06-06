@@ -11,9 +11,11 @@ const loading_rl = document.getElementById("loading_rl");
 
 let ws_user, ws_rl, ws_action, session_id;
 
+const token = localStorage.getItem('token');
+
 // Send an offer to the backend to start a new session
 async function startSession() {
-    const response = await fetch(REST_URL, { method: "POST" });
+    const response = await fetch(REST_URL, { method: "POST", headers: { "Authorization": `Bearer ${token}`} });
     const data = await response.json();
     session_id = data.session_id;
 }
