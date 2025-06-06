@@ -179,7 +179,7 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://10.49.12.47:9999"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
