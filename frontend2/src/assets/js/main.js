@@ -68,7 +68,7 @@ function startActionWebSocket() {
 
 let a = [0.0, 0.0, 0.0];
 function onKeyDownSendAction(e) {
-    switch (e.key.tolowerCase()) {
+    switch (e.key.toLowerCase()) {
         case "a":
             a[0] = -1.0;
             break;
@@ -89,7 +89,7 @@ function onKeyDownSendAction(e) {
     }
 }
 function onKeyUpSendAction(e) {
-    switch (e.key.tolowerCase()) {
+    switch (e.key.toLowerCase()) {
         case "a":
         case "d":
             a[0] = 0.0;
