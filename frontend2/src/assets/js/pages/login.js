@@ -3,7 +3,6 @@
 // --------------
 const backendHost = "172.24.0.83:443"; // your backend address (with port)
 const REST_URL = `https://${backendHost}/token`;
-const ME_URL    = `https://${backendHost}/users/me`;
 
 
 // Wait for the entire DOM to be loaded before running any code
@@ -47,31 +46,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 // Save the access token in localStorage for future requests
                 localStorage.setItem('token', data.access_token);
 
-                // -------------- 
-                // New: Fetch user's name and last name, then store full name 
-                // --------------
-                try {
-                    const meResponse = await fetch(ME_URL, {
-                        method: "GET",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "Authorization": `Bearer ${data.access_token}`,
-                        },
-                    });
+                data = parseJwt(data.access_token);
+                user = data.user;
 
-                    if (meResponse.ok) {
-                        const userData = await meResponse.json();
-                        // Combine name and last name, and save to localStorage
-                        const fullName = `${userData.name} ${userData.name_last}`;
-                        localStorage.setItem("name", fullName);
-                    } else {
-                        // If /users/me fails, set a default name
-                        localStorage.setItem("name", "User");
-                    }
-                } catch (err) {
-                    // In case of network error fetching /users/me
-                    localStorage.setItem("name", "User");
-                }
+                storedName = localStorage.setItem('name', user);
+
+               
 
                 // Redirect the user to the dashboard page
                 window.location.href = 'dashboard/index.html';
@@ -96,4 +76,14 @@ function showErrorPopup(message = "Invalid email or password..") {
     setTimeout(() => {
         popup.style.display = 'none';
     }, 5000);
+}
+
+function parseJwt (token) {
+    var base64Url = token.split('.')[1];
+    var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+
+    return JSON.parse(jsonPayload);
 }
