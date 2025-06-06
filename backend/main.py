@@ -361,7 +361,7 @@ session_queues: Dict[str, asyncio.Queue] = {}
 MODEL_URL = "https://192.24.0.9:443/predict"
 
 
-async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
+async def cleanup(session_id: str):
     """
     Tear down everything associated with a given session_id:
       - Close gym environments
@@ -373,6 +373,8 @@ async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
 
     if not info:
         return
+    
+    db = await get_db()
     
     env_user = info["env_user"]
     env_rl = info["env_rl"]
@@ -401,7 +403,7 @@ async def cleanup(session_id: str, db: AsyncSession = Depends(get_db)):
         # Only update the record if the current run is a new record
         if curr_record < info["best_reward"]:
             update_query = update(User).where(User.email == user_email).values(
-                record = info["best_reward"]
+                record = info["best_reward"],
                 last_game = info["last_game"]
             )
             await db.execute(update_query)
@@ -433,10 +435,10 @@ async def offer(current_user: dict = Depends(get_current_user)):
 
     # Create Gym environments
     env_user = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
-    await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
+    #await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
 
     env_rl = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
-    await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
+    #await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
 
     # Create a per-session queue for user actions
     action_queue: asyncio.Queue = asyncio.Queue()
@@ -453,34 +455,65 @@ async def offer(current_user: dict = Depends(get_current_user)):
             "best_reward": 0.0,
             "runs" : 0,
             "wins" : 0,
-            "last_game" : datetime.now(timezone.utc),
-            "user_email" : current_user.get("email")
+            "last_game" : datetime.now(),
+            "user_email" : current_user.get("email"),
+
+            # Coordinator flags
+            "needs_reset_user" : False,
+            "needs_reset_rl" : False,
+            "live_video_user" : True,
+            "live_video_rl" : True,
         }
         session_queues[session_id] = action_queue
 
     return {"session_id": session_id}
 
-async def reset_both_envs(session_id:str):
+async def reset_both_envs(session_id: str):
+    # 1) Grab both env_user and env_rl under the lock
     async with session_data_lock:
         info = session_data.get(session_id)
-        env_user = info["env_user"]
-        env_rl = info["env_rl"]
-    obs_us, _ =await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
-    obs_rl, _ = await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
+        if info is None:
+            # The session was cleaned up or never existed
+            raise RuntimeError(f"Session {session_id} not found in reset_both_envs()")
 
+        env_user = info["env_user"]
+        env_rl   = info["env_rl"]
+
+    # 2) Call env_user.reset() off the thread pool, then unpack safely
+    result_user = await asyncio.get_running_loop().run_in_executor(executor, env_user.reset)
+    if isinstance(result_user, tuple) and len(result_user) >= 1:
+        # Gymnasium style: (obs_array, info_dict)
+        obs_us = result_user[0]
+    else:
+        # Classic Gym style: just obs_array
+        obs_us = result_user
+
+    # 3) Do the same for env_rl
+    result_rl = await asyncio.get_running_loop().run_in_executor(executor, env_rl.reset)
+    if isinstance(result_rl, tuple) and len(result_rl) >= 1:
+        obs_rl = result_rl[0]
+    else:
+        obs_rl = result_rl
+
+    # 4) Now update the shared stats under the lock
     async with session_data_lock:
+        # Double‐check that session still exists
+        info = session_data.get(session_id)
+        if info is None:
+            # If it vanished while we were in the threadpool, bail out
+            raise RuntimeError(f"Session {session_id} disappeared mid‐reset.")
+
         info["runs"] += 1
-        # Get the best reward obtained
         info["best_reward"] = max(info["reward_user"], info["best_reward"])
 
-        # Compare the agent and user reward
         if info["reward_user"] > info["reward_rl"]:
             info["wins"] += 1
-            info["last_game"] = datetime.now(timezone.utc)
-        
+            info["last_game"] = datetime.now()
+
+        # Zero out for the next run
         info["reward_user"] = 0.0
-        info["reward_rl"] = 0.0
-    
+        info["reward_rl"]  = 0.0
+
     return obs_us, obs_rl
 
 @app.websocket("/video_user")
@@ -522,17 +555,27 @@ async def video_user_stream(websocket: WebSocket):
             obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
                 executor, env.step, np.array(last_action, dtype=np.float32)
             )
-            total_rew += reward
+
+            # Update reward
+            async with session_data_lock:
+                session_data[session_id]["reward_user"] += reward
 
             if term or trunc:
                 async with session_data_lock:
-                    session_data[session_id]["needs_reset"] = True
+                    session_data[session_id]["needs_reset_user"] = True
             
             # Reset environment if needed
             async with session_data_lock:
-                if session_data[session_id].get("needs_reset"):
-                    await reset_both_envs(session_id)
-                    session_data[session_id]["needs_reset"] = False
+                # If either player or AI says “end‐of‐episode,” do a single combined reset
+                if session_data[session_id]["needs_reset_user"] or session_data[session_id]["needs_reset_rl"]:
+                    try:
+                        obs_us, obs_rl = await reset_both_envs(session_id)
+                    except RuntimeError:
+                        # session vanished—just break
+                        break
+                    # Clear both flags so the other loop knows “we already reset”
+                    session_data[session_id]["needs_reset_user"] = False
+                    session_data[session_id]["needs_reset_rl"]   = False
 
             # Render (offloaded)
             frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
@@ -545,17 +588,104 @@ async def video_user_stream(websocket: WebSocket):
             # Send JPEG bytes
             await websocket.send_bytes(buffer.tobytes())
 
-
-
             # Throttle to ~30 FPS
             await asyncio.sleep(1 / 60)
 
     except WebSocketDisconnect:
         logger.info(f"[video_user] WebSocket disconnected for session {session_id}")
+        async with session_data_lock:
+            session_data[session_id]["live_video_user"] = False
+            # Only actually remove if RL is also gone:
+            if not session_data[session_id]["live_video_rl"]:
+                session_data.pop(session_id)
+                session_queues.pop(session_id)
     except Exception as e:
         logger.error(f"[video_user] Exception for session {session_id}: {e}")
     finally:
         # Clean up this session (idempotent if others already triggered it)
+        await cleanup(session_id)
+
+@app.websocket("/video_rl")
+async def video_rl_stream(websocket: WebSocket):
+    await websocket.accept()
+    session_id = websocket.query_params.get("session_id")
+    if not session_id:
+        await websocket.close(code=4001)
+        return
+
+    # Atomically grab session info and queue (though queue not used here)
+    async with session_data_lock:
+        info = session_data.get(session_id)
+
+    if not info:
+        await websocket.close(code=4002)
+        return
+
+    env = info["env_rl"]
+    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
+
+    try:
+        while True:
+            # call compute
+            res = requests.post(f'{BACKEND_URL}/predict',
+                                verify=False, json={'obs': obs.tolist()})
+
+            if res.status_code != 200:
+                raise HTTPException(500, "AI is not available")
+
+            data = res.json()['action']
+
+            aiAction = np.array(data, dtype=np.float32)
+            # Here you could call an external model; currently, we sample randomly
+
+            # Step environment (offloaded)
+            obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
+                executor, env.step, aiAction
+            )
+            async with session_data_lock:
+                session_data[session_id]["reward_rl"] += reward
+
+            if term or trunc:
+                async with session_data_lock:
+                    session_data[session_id]["needs_reset_rl"] = True
+            
+            # Reset environment if needed
+            async with session_data_lock:
+                if session_data[session_id]["needs_reset_user"] or session_data[session_id]["needs_reset_rl"]:
+                    try:
+                        obs_us, obs = await reset_both_envs(session_id)
+                    except RuntimeError:
+                        # session was already deleted
+                        break
+                    session_data[session_id]["needs_reset_user"] = False
+                    session_data[session_id]["needs_reset_rl"]   = False
+
+            # Render (offloaded)
+            frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
+
+            # Encode frame as JPEG (offloaded)
+            _, buffer = await asyncio.get_running_loop().run_in_executor(
+                executor, cv2.imencode, ".jpg", frame
+            )
+
+            # Send JPEG bytes
+            await websocket.send_bytes(buffer.tobytes())
+
+            # Throttle to ~60 FPS
+            await asyncio.sleep(1 / 60)
+
+    except WebSocketDisconnect:
+        logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
+        async with session_data_lock:
+            session_data[session_id]["live_video_rl"] = False
+            # Only actually remove if user is also gone:
+            if not session_data[session_id]["live_video_user"]:
+                session_data.pop(session_id)
+                session_queues.pop(session_id)
+    except Exception as e:
+        logger.error(f"[video_rl] Exception for session {session_id}: {e}")
+    finally:
+        # Clean up session (idempotent if another handler already did it)
         await cleanup(session_id)
 
 @app.get("/debug")
@@ -605,72 +735,6 @@ async def uwu():
     finally:
         # Clean up session (idempotent if another handler already did it)
         pass
-
-@app.websocket("/video_rl")
-async def video_rl_stream(websocket: WebSocket):
-    await websocket.accept()
-    session_id = websocket.query_params.get("session_id")
-    if not session_id:
-        await websocket.close(code=4001)
-        return
-
-    # Atomically grab session info and queue (though queue not used here)
-    async with session_data_lock:
-        info = session_data.get(session_id)
-        queue = session_queues.get(session_id)
-
-    if not info or not queue:
-        await websocket.close(code=4002)
-        return
-
-    env = info["env_rl"]
-    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
-
-    try:
-        while True:
-            # call compute
-            res = requests.post(f'{BACKEND_URL}/predict',
-                                verify=False, json={'obs': obs.tolist()})
-
-            if res.status_code != 200:
-                raise HTTPException(500, "AI is not available")
-
-            data = res.json()['action']
-
-            aiAction = np.array(data, dtype=np.float32)
-            # Here you could call an external model; currently, we sample randomly
-
-            # Step environment (offloaded)
-            obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
-                executor, env.step, aiAction
-            )
-            info["reward_rl"] += reward
-
-            if term or trunc:
-                async with session_data_lock:
-                    session_data[session_id]["needs_reset"] = True
-
-            # Render (offloaded)
-            frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
-
-            # Encode frame as JPEG (offloaded)
-            _, buffer = await asyncio.get_running_loop().run_in_executor(
-                executor, cv2.imencode, ".jpg", frame
-            )
-
-            # Send JPEG bytes
-            await websocket.send_bytes(buffer.tobytes())
-
-            # Throttle to ~60 FPS
-            await asyncio.sleep(1 / 60)
-
-    except WebSocketDisconnect:
-        logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
-    except Exception as e:
-        logger.error(f"[video_rl] Exception for session {session_id}: {e}")
-    finally:
-        # Clean up session (idempotent if another handler already did it)
-        await cleanup(session_id)
 
 @app.websocket("/ws")
 async def websocket_handler(websocket: WebSocket):
