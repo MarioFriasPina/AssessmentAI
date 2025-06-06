@@ -1,50 +1,85 @@
-document.addEventListener("DOMContentLoaded", () => {
+const backendHost = "172.24.0.223:443/api"; // your backend address (with port)
+const REST_URL = `https://${backendHost}/leaderboard`;
+const REST_URL2 = `https://${backendHost}/data`;
+
+const token = localStorage.getItem('token');
+
+document.addEventListener("DOMContentLoaded", async () => {
   const tableBody = document.getElementById("scoreTableBody");
 
-  const scoreboardData = [
-    { name: "John Doe", time: "00:45", date: "2025-06-01" },
-    { name: "Jane Smith", time: "01:12", date: "2025-06-02" },
-    { name: "Alice Brown", time: "00:59", date: "2025-06-03" },
-    { name: "Bob Johnson", time: "01:23", date: "2025-06-03" },
-    { name: "Alan Hernandez", time: "00:39", date: "2025-06-04" },
-  ];
+  if (!token) {
+    console.error("No token found in localStorage.");
+    return;
+  }
 
-  scoreboardData.forEach(entry => {
-    const row = document.createElement("tr");
+  try {
+    const response = await fetch(REST_URL, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+    });
 
-    row.innerHTML = `
-      <td><a href="#" class="text-muted">${entry.name}</a></td>
-      <td>${entry.time}</td>
-      <td>${entry.date}</td>
-    `;
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-    tableBody.appendChild(row);
-  });
+    const scoreboardData = await response.json();
+
+    scoreboardData.forEach(entry => {
+      const row = document.createElement("tr");
+
+      row.innerHTML = `
+        <td><a href="#" class="text-muted">${entry.name}</a></td>
+        <td>${entry.score}</td>
+        <td>${new Date(entry.date).toLocaleString()}</td>
+      `;
+
+      tableBody.appendChild(row);
+    });
+
+  } catch (error) {
+    console.error("Error fetching leaderboard:", error);
+  }
 });
 
 // Function to display metrics in the modal
 
-document.addEventListener("DOMContentLoaded", () => {
-  const stats = {
-    bestTime: "12 minutes",
-    avgTime: "5 minutes",
-    wins: "17 wins",
-    losses: "8 losses"
-  };
+document.addEventListener("DOMContentLoaded", async () => {
+  if (!token) {
+    console.error("No token found in localStorage.");
+    return;
+  }
 
-  //check if the data is null or undefined
-  //if null or undefined, we will display 0
-    if (!stats.bestTime) stats.bestTime = "0 minutes";
-    if (!stats.avgTime) stats.avgTime = "0 minutes";
-    if (!stats.wins) stats.wins = "0 wins";
-    if (!stats.losses) stats.losses = "0 losses";
+  try {
+    const response = await fetch(REST_URL2, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+    });
 
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-  // Insertamos los valores en el HTML
-  document.getElementById("bestTime").textContent = stats.bestTime;
-  document.getElementById("avgTime").textContent = stats.avgTime;
-  document.getElementById("wins").textContent = stats.wins;
-  document.getElementById("losses").textContent = stats.losses;
-  
+    const stats = await response.json();
+
+    // Fallbacks por si viene null o undefined
+    const bestTime = stats.record ? `${stats.record} minutes` : "0 minutes";
+    const avgTime = stats.total ? `${Math.round(stats.record / stats.total)} minutes` : "0 minutes";
+    const wins = stats.win ?? 0;
+    const losses = stats.loss ?? 0;
+
+    // Insertamos los valores en el HTML
+    document.getElementById("bestTime").textContent = bestTime;
+    document.getElementById("avgTime").textContent = avgTime;
+    document.getElementById("wins").textContent = `${wins} wins`;
+    document.getElementById("losses").textContent = `${losses} losses`;
+
+  } catch (error) {
+    console.error("Error fetching user stats:", error);
+  }
 });
-

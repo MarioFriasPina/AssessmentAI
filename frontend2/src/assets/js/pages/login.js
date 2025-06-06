@@ -1,7 +1,7 @@
 // --------------
 // 1. Configuration
 // --------------
-const backendHost = "172.24.0.83:443"; // your backend address (with port)
+const backendHost = "172.24.0.83:443/api"; // your backend address (with port)
 const REST_URL = `https://${backendHost}/token`;
 
 
@@ -24,12 +24,13 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // Prepare form data as URL-encoded
-        const formData = new URLSearchParams();
-        formData.append("username", email);
-        formData.append("password", password);
+        
 
         try {
+            // Prepare form data as URL-encoded
+            const formData = new URLSearchParams();
+            formData.append("username", email);
+            formData.append("password", password);
             // Send a POST request to the FastAPI backend
             const response = await fetch(REST_URL, {
                 method: "POST",
