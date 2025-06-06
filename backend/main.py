@@ -27,7 +27,6 @@ import bcrypt
 import jwt
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 import uvloop
-import httpx
 
 
 # region Conf
@@ -726,10 +725,9 @@ async def video_rl_stream(websocket: WebSocket):
 
     try:
         while True:
-            # 3) Ask backend AI for next action (non-blocking with httpx)
             try:
-                async with httpx.AsyncClient(verify=False) as client:
-                    res = await client.post(f"{BACKEND_URL}/predict", json={"obs": obs.tolist()})
+                # call predict
+                res = await asyncio.get_running_loop().run_in_executor(executor, requests.post, f"https://{MODEL_URL}/predict", json={"state": obs})
                 if res.status_code != 200:
                     raise RuntimeError(f"Predict endpoint returned {res.status_code}")
                 data = res.json().get("action")
