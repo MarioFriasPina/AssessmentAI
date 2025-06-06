@@ -179,7 +179,7 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://10.49.12.47:9999"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -616,7 +616,7 @@ async def video_rl_stream(websocket: WebSocket):
         await websocket.close(code=4001)
         return
 
-    # Atomically grab session info
+    # Atomically grab session info and queue (though queue not used here)
     async with session_data_lock:
         info = session_data.get(session_id)
 
@@ -625,39 +625,57 @@ async def video_rl_stream(websocket: WebSocket):
         return
 
     env = info["env_rl"]
-    # Safe initial reset/unpack (Gymnasium vs. classic Gym)
-    result = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
-    if isinstance(result, tuple) and len(result) >= 1:
-        obs, _ = result
-    else:
-        obs = result
+    obs, _ = await asyncio.get_running_loop().run_in_executor(executor, env.reset)
 
     try:
         while True:
-            # … your RL loop, e.g. call to /predict, env.step(...), etc. …
+            # call compute
+            res = requests.post(f'{BACKEND_URL}/predict',
+                                verify=False, json={'obs': obs.tolist()})
 
-            # If terminal, mark needs_reset_rl
+            if res.status_code != 200:
+                raise HTTPException(500, "AI is not available")
+
+            data = res.json()['action']
+
+            aiAction = np.array(data, dtype=np.float32)
+            # Here you could call an external model; currently, we sample randomly
+
+            # Step environment (offloaded)
+            obs, reward, term, trunc, info_step = await asyncio.get_running_loop().run_in_executor(
+                executor, env.step, aiAction
+            )
+            async with session_data_lock:
+                session_data[session_id]["reward_rl"] += reward
+
             if term or trunc:
                 async with session_data_lock:
-                    # FIRST guard: re‐fetch info
-                    info = session_data.get(session_id)
-                    if info:
-                        info["needs_reset_rl"] = True
-
-            # Shared reset logic under lock (exactly one reset per termination)
+                    session_data[session_id]["needs_reset_rl"] = True
+            
+            # Reset environment if needed
             async with session_data_lock:
-                info = session_data.get(session_id)
-                if info and (info["needs_reset_user"] or info["needs_reset_rl"]):
+                if session_data[session_id]["needs_reset_user"] or session_data[session_id]["needs_reset_rl"]:
                     try:
-                        obs_us, obs_rl = await reset_both_envs(session_id)
+                        obs_us, obs = await reset_both_envs(session_id)
                     except RuntimeError:
-                        # session was popped—just break out of the loop
+                        # session was already deleted
                         break
-                    info["needs_reset_user"] = False
-                    info["needs_reset_rl"]   = False
-                    obs = obs_rl
+                    session_data[session_id]["needs_reset_user"] = False
+                    session_data[session_id]["needs_reset_rl"]   = False
 
-            # … render, send JPEG, sleep, etc. …
+            # Render (offloaded)
+            frame = await asyncio.get_running_loop().run_in_executor(executor, env.render)
+
+            # Encode frame as JPEG (offloaded)
+            _, buffer = await asyncio.get_running_loop().run_in_executor(
+                executor, cv2.imencode, ".jpg", frame
+            )
+
+            # Send JPEG bytes
+            await websocket.send_bytes(buffer.tobytes())
+
+            # Throttle to ~60 FPS
+            await asyncio.sleep(1 / 60)
 
     except WebSocketDisconnect:
         logger.info(f"[video_rl] WebSocket disconnected for session {session_id}")
