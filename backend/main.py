@@ -459,8 +459,8 @@ async def offer(current_user: dict = Depends(get_current_user)):
             "user_email" : current_user.get("email"),
 
             # Coordinator flags
-            "need_reset_user" : False,
-            "need_reset_rl" : False,
+            "needs_reset_user" : False,
+            "needs_reset_rl" : False,
             "live_video_user" : True,
             "live_video_rl" : True,
         }
