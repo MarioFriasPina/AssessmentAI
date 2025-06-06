@@ -1,7 +1,7 @@
 // --------------
 // 1. Configuration
 // --------------
-const backendHost = "172.24.0.83:443"; // your backend address (with port)
+const backendHost = "172.24.0.83:443/api"; // your backend address (with port)
 const REST_URL = `https://${backendHost}/create`;
 
 // Wait for the entire DOM to be loaded before running any code
@@ -17,6 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const email = document.getElementById("email").value.trim();
         const password = document.getElementById("password").value.trim();
 
+        
+
         // Validate fields are not empty
         if (!name || !last_name || !email || !password) {
             showErrorPopup("Please fill in all fields.");
@@ -29,34 +31,32 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // Prepare form data as URL-encoded
-        const formData = new URLSearchParams();
-        formData.append("name", name);
-        formData.append("name_last", last_name);
-        formData.append("email", email);
-        formData.append("password", password);
-
+     
         try {
+
+            var dataToSend = {
+                "name": name,
+                "name_last": last_name,
+                "email": email,
+                "password": password
+            };
+
+
             // Send a POST request to the FastAPI backend
             const response = await fetch(REST_URL, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Content-Type": "application/json",
                 },
-                body: formData,
+                body:  JSON.stringify(dataToSend)
             });
 
             if (response.ok) {
                 const result = await response.json();
-
-                // Optionally check the returned message or status
-                if (result.status === "success" || result.message === "User created") {
-                    showSuccessPopup("User created successfully. Redirecting...");
-                    setTimeout(() => {
-                        window.location.href = '../login.html';
-                    }, 400);
-                } else {
-                    showErrorPopup("Error creating user. Please try again.");
-                }
+                showSuccessPopup("Registration successful! You can now log in.");
+                setTimeout(() => {
+                    window.location.href = "login.html"; // Redirect to login page after success
+                }, 1000);
             } else {
                 showErrorPopup("Registration failed. Please check your data.");
             }
