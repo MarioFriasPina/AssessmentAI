@@ -357,10 +357,6 @@ session_data_lock = asyncio.Lock()
 # Convenience alias to the queue within session_data; kept in sync under session_data_lock
 session_queues: Dict[str, asyncio.Queue] = {}
 
-# Model inference server URL (not used in this snippet, but kept for reference)
-MODEL_URL = "https://192.24.0.9:443/predict"
-
-
 async def cleanup(session_id: str):
     """
     Tear down everything associated with a given session_id:
