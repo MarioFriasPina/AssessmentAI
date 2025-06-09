@@ -1,24 +1,29 @@
 """ Litserve server for serving AI models. """
 
 import litserve as ls
+from stable_baselines3 import PPO
+import gymnasium as gym
+
+import numpy as np
+import torch
 
 class SimpleLitAPI(ls.LitAPI):
     def setup(self, device):
-        # self.model1 = lambda x: x**2
-        # self.model2 = lambda x: x**3
-        pass
+        self.env = gym.make("CarRacing-v3", render_mode="rgb_array")
+
+        model_file = "checkpoints/basicPPO/final_ppo_carracing.zip"
+        self.model = PPO.load(model_file, env=self.env, device=device)
 
     def decode_request(self, request):
-        return request["input"]
+        return {"obs": request["obs"]}
 
     def predict(self, x):
-        # squared = self.model1(x)
-        # cubed = self.model2(x)
-        # output = squared + cubed
-        return {"output": 0}
+        with torch.no_grad():
+            action = self.model.predict(x, deterministic=True)
+        return action
 
     def encode_response(self, output):
-        return {"output": output}
+        return {"action": output}
 
 if __name__ == "__main__":
     api = SimpleLitAPI()
